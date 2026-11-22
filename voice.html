@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>kanon 音声入力 試作</title>
+<meta name="theme-color" content="#15241D">
+<style>
+  :root{
+    --ink:#14201B; --ink-2:#465650; --ink-3:#5C6B63;
+    --paper:#F1F3EE; --surf:#F7F8F5; --line:#CDD4CA; --line2:#E1E6DF;
+    --green:#2E6B4F; --amber:#A8700F; --red:#A33A2E;
+    --red-l:#F6E6E3; --amber-l:#F7EFDD;
+    --pad:16px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#E8EDE9; --ink-2:#B9C4BD; --ink-3:#8A978F;
+      --paper:#0F1613; --surf:#182220; --line:#5E6E64; --line2:#414F46;
+      --green:#6BBE8E; --amber:#E0B050; --red:#E58376;
+      --red-l:#2A1D1B; --amber-l:#2A2418;
+    }
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    font-size:16px; line-height:1.6;
+    padding:0 var(--pad) calc(40px + env(safe-area-inset-bottom));
+    max-width:560px; margin:0 auto;
+  }
+  header{padding:22px 0 14px;border-bottom:1px solid var(--line)}
+  h1{margin:0;font-size:1.3rem;letter-spacing:.04em;font-weight:700}
+  h1 em{font-style:normal;color:var(--green)}
+  .sub{margin:4px 0 0;font-size:.82rem;color:var(--ink-3)}
+  h2{font-size:.78rem;font-weight:700;letter-spacing:.09em;color:var(--ink-3);
+     margin:26px 0 9px;text-transform:none}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* 話すボタン */
+  .mic{display:block;width:100%;border:0;border-radius:14px;background:var(--green);
+    color:var(--paper);font:inherit;font-size:1.05rem;font-weight:700;
+    padding:20px;margin:20px 0 0;min-height:72px;transition:transform .12s}
+  .mic:active{transform:scale(.98)}
+  .mic[data-on="1"]{background:var(--red)}
+  .mic[disabled]{opacity:.45}
+  .pulse{display:inline-block;width:10px;height:10px;border-radius:50%;
+    background:var(--paper);margin-right:9px;vertical-align:1px;animation:p 1.1s infinite}
+  @keyframes p{0%,100%{opacity:1}50%{opacity:.25}}
+
+  .heard{margin:14px 0 0;padding:13px 14px;border-left:3px solid var(--line);
+    background:var(--surf);border-radius:0 8px 8px 0;min-height:52px}
+  .heard .lb{display:block;font-size:.72rem;color:var(--ink-3);letter-spacing:.08em;margin-bottom:3px}
+  .heard .tx{font-size:1rem;color:var(--ink)}
+  .heard .tx.dim{color:var(--ink-3)}
+
+  /* 読み取り結果 */
+  .card{border-top:1px solid var(--line);margin-top:22px;padding-top:4px}
+  .kind{display:inline-block;font-size:.74rem;font-weight:700;letter-spacing:.06em;
+    padding:3px 9px;border-radius:5px;background:var(--green);color:var(--paper);margin:12px 0 4px}
+  .kind.exp{background:var(--amber)}
+  .kind.work{background:var(--ink-2)}
+  .row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line2)}
+  .row:last-of-type{border-bottom:0}
+  .row label{flex:0 0 72px;font-size:.84rem;color:var(--ink-3)}
+  .row input,.row select{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;
+    background:var(--surf);color:var(--ink);font:inherit;font-size:.98rem;padding:9px 10px;
+    -webkit-appearance:none;min-height:42px}
+  .row input.num{text-align:right;font-variant-numeric:tabular-nums}
+  .row .miss{border-color:var(--red);background:var(--red-l)}
+  .tot{text-align:right;font-size:1.05rem;font-weight:700;padding:12px 0 2px;
+    border-top:1px solid var(--line);margin-top:8px;font-variant-numeric:tabular-nums}
+  .ok{display:block;width:100%;border:0;border-radius:12px;background:var(--ink);
+    color:var(--paper);font:inherit;font-size:1rem;font-weight:700;padding:15px;margin-top:14px;min-height:54px}
+  .ghost{display:block;width:100%;border:1px solid var(--line);border-radius:12px;
+    background:transparent;color:var(--ink-3);font:inherit;font-size:.92rem;
+    padding:12px;margin-top:9px;min-height:46px}
+
+  .note{font-size:.8rem;color:var(--ink-3);line-height:1.6;margin:10px 0 0}
+  .warn{border-left:3px solid var(--amber);background:var(--amber-l);
+    padding:11px 13px;border-radius:0 8px 8px 0;margin:16px 0 0}
+  .warn b{display:block;color:var(--amber);font-size:.9rem;margin-bottom:3px}
+  .warn span{display:block;font-size:.8rem;color:var(--ink-2)}
+
+  /* 例文 */
+  .ex{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line2);
+    background:none;color:var(--ink);font:inherit;font-size:.93rem;padding:11px 0;min-height:44px}
+  .ex:last-child{border-bottom:0}
+  .ex span{display:block;font-size:.76rem;color:var(--ink-3);margin-top:2px}
+
+  textarea{width:100%;border:1px solid var(--line);border-radius:8px;background:var(--surf);
+    color:var(--ink);font:inherit;font-size:.95rem;padding:10px;min-height:76px;
+    -webkit-appearance:none;resize:vertical}
+
+  /* 記録した一覧 */
+  .log{padding:10px 0;border-bottom:1px solid var(--line2);display:flex;gap:10px;align-items:baseline}
+  .log:last-child{border-bottom:0}
+  .log b{flex:1;font-size:.95rem;font-weight:400}
+  .log i{font-style:normal;font-size:.76rem;color:var(--ink-3)}
+  .log em{font-style:normal;font-weight:700;font-variant-numeric:tabular-nums}
+  .empty{color:var(--ink-3);font-size:.88rem;padding:14px 0}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>kanon <em>音声入力</em> 試作</h1>
+  <p class="sub">声で記録をつけられるか試すためのものです。本体のデータには一切触れません。</p>
+</header>
+
+<div id="warnBox"></div>
+
+<button class="mic" id="mic">話して記録する</button>
+
+<div class="heard">
+  <span class="lb">聞き取った言葉</span>
+  <span class="tx dim" id="heard">まだ何も聞いていません</span>
+</div>
+
+<div id="result"></div>
+
+<h2>例文（押すと、声で言ったことにして試せます）</h2>
+<div id="examples"></div>
+
+<h2>手で試す</h2>
+<textarea id="manual" placeholder="ベビーリーフ 道の駅おおさとに12点 150円"></textarea>
+<button class="ghost" id="manualGo">この文章で試す</button>
+<p class="note">マイクが使えない場所でも、読み取りの精度だけはここで確かめられます。</p>
+
+<h2>この試作で記録したもの</h2>
+<div id="log"><p class="empty">まだありません</p></div>
+
+<p class="note" style="margin-top:28px">
+  これは試作品です。ここで記録したものは、この画面を閉じると消えます。
+</p>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+
+/* ===== kanon の登録内容（本番ではアプリから読む） ===== */
+const CROPS  = ['ベビーリーフ','小松菜','水菜','ほうれん草','レタス','春菊','枝豆',
+                'トウモロコシ','きゅうり','ナス','トマト','ピーマン'];
+const STORES = ['道の駅おおさと','元気くん市場仙台南店','おてんとさん 大和店',
+                'おてんとさん 富谷店','おてんとさん 利府店','万葉おおひら館','JAグリーン'];
+const TASKS  = ['収穫','播種','定植','防除','追肥','潅水','除草','調製・袋詰め','配達','片付け','管理'];
+const CATS   = ['種苗費','肥料費','農薬衛生費','諸材料費','動力光熱費','修繕費',
+                '減価償却費','荷造運賃','農具費','地代賃借料','雑費'];
+
+/* ===== 言葉を数字に直す ===== */
+const KAN = {〇:0,零:0,一:1,二:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9};
+function kan2num(s){
+  // 「十二」「二十」「百二十」などを数字に
+  let n = 0, cur = 0, hit = false;
+  for (const ch of s){
+    if (ch in KAN){ cur = KAN[ch]; hit = true; }
+    else if (ch === '十'){ n += (cur || 1) * 10; cur = 0; hit = true; }
+    else if (ch === '百'){ n += (cur || 1) * 100; cur = 0; hit = true; }
+    else if (ch === '千'){ n += (cur || 1) * 1000; cur = 0; hit = true; }
+    else return null;
+  }
+  return hit ? n + cur : null;
+}
+function normalize(t){
+  let s = String(t || '')
+    .replace(/[０-９]/g, c => '0123456789'[c.charCodeAt(0) - 0xFF10])
+    .replace(/[，、]/g, ' ')
+    .replace(/　/g, ' ');
+  // 漢数字のかたまりを数字に置き換える
+  s = s.replace(/[〇零一二三四五六七八九十百千]+/g, m => {
+    const v = kan2num(m);
+    return v === null ? m : String(v);
+  });
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+/* ===== 言い方のゆれを吸収する ===== */
+const STORE_HINT = {
+  '道の駅おおさと': ['みちのえき','道の駅','おおさと','大郷','大里'],
+  '元気くん市場仙台南店': ['げんきくん','元気くん','元気君','仙台南','茂庭','もにわ'],
+  'おてんとさん 大和店': ['おてんとさん大和','おてんとさん 大和','たいわ','大和'],
+  'おてんとさん 富谷店': ['おてんとさん富谷','とみや','富谷'],
+  'おてんとさん 利府店': ['おてんとさん利府','りふ','利府'],
+  '万葉おおひら館': ['まんよう','万葉','おおひら','大衡'],
+  'JAグリーン': ['じぇいえー','ja','JA','グリーン','ジェイエー'],
+};
+const CROP_HINT = {
+  'ベビーリーフ': ['ベビーリーフ','ベビー','べびーりーふ'],
+  '小松菜': ['小松菜','こまつな'],
+  '水菜': ['水菜','みずな'],
+  'ほうれん草': ['ほうれん草','ほうれんそう','法蓮草'],
+  'トウモロコシ': ['とうもろこし','トウモロコシ','とうきび'],
+  '春菊': ['春菊','しゅんぎく'],
+  '枝豆': ['枝豆','えだまめ'],
+};
+function findBy(text, list, hints){
+  const t = text.replace(/\s/g, '');
+  let best = null, bestLen = 0;
+  list.forEach(name => {
+    const keys = [name].concat((hints && hints[name]) || []);
+    keys.forEach(k => {
+      const kk = String(k).replace(/\s/g, '');
+      if (kk && t.includes(kk) && kk.length > bestLen){ best = name; bestLen = kk.length; }
+    });
+  });
+  return best;
+}
+
+/* ===== 文章から記録を組み立てる ===== */
+function parse(text){
+  const s = normalize(text);
+  const r = { raw: text, norm: s, kind: null, missing: [] };
+
+  const crop  = findBy(s, CROPS,  CROP_HINT);
+  const store = findBy(s, STORES, STORE_HINT);
+  const task  = findBy(s, TASKS,  {'調製・袋詰め':['調製','袋詰め','袋詰','ふくろづめ'],
+                                   '潅水':['潅水','かん水','水やり'],
+                                   '防除':['防除','消毒','農薬']});
+  const cat   = findBy(s, CATS,   {'諸材料費':['資材','諸材料','材料'],
+                                   '農薬衛生費':['農薬','衛生'],
+                                   '動力光熱費':['燃料','ガソリン','軽油','電気','光熱'],
+                                   '荷造運賃':['荷造','運賃','送料'],
+                                   '農具費':['農具','道具']});
+
+  const mQty   = s.match(/(\d+)\s*(?:点|個|パック|袋|本|束|ケース)/);
+  const mYen   = s.match(/(\d+)\s*円/);
+  const mMin   = s.match(/(\d+)\s*分/);
+  const mHour  = s.match(/(\d+(?:\.\d+)?)\s*時間/);
+  const mPpl   = s.match(/(\d+)\s*人/);
+  const mNg    = s.match(/(?:規格外|はねだし|ハネダシ)\s*(\d+)/);
+  const bare   = [...s.matchAll(/\d+/g)].map(m => +m[0]);
+
+  const qty  = mQty ? +mQty[1] : null;
+  const yen  = mYen ? +mYen[1] : null;
+  const min  = mHour ? Math.round(parseFloat(mHour[1]) * 60) : (mMin ? +mMin[1] : null);
+
+  // どの記録か決める
+  if (cat && yen && !store){
+    r.kind = 'exp';
+    r.cat = cat; r.amt = yen;
+    r.note = s.replace(/\d+\s*円/, '').replace(cat, '').trim();
+  } else if (store && (qty !== null || crop)){
+    r.kind = 'ship';
+    r.crop = crop; r.store = store;
+    r.qty = qty !== null ? qty : null;
+    r.price = yen;
+    if (!r.crop) r.missing.push('品目');
+    if (r.qty === null) r.missing.push('点数');
+  } else if (task || min !== null){
+    r.kind = 'work';
+    r.task = task; r.crop = crop; r.min = min; r.ppl = mPpl ? +mPpl[1] : 1;
+    if (task === '収穫'){
+      // 「収穫200、規格外12」のような言い方
+      r.got = mQty ? qty : (bare.find(n => n !== min && n !== r.ppl) ?? null);
+      r.ng  = mNg ? +mNg[1] : null;
+    }
+    if (!r.task) r.missing.push('作業');
+    if (r.min === null) r.missing.push('時間');
+  } else {
+    r.kind = null;
+  }
+  return r;
+}
+
+/* ===== 画面 ===== */
+const FIELDS = {
+  ship: [['crop','品目','select',CROPS],['store','店舗','select',STORES],
+         ['qty','点数','num'],['price','単価','num']],
+  work: [['task','作業','select',TASKS],['crop','品目','select',CROPS],
+         ['min','時間（分）','num'],['got','収穫量','num'],['ng','規格外','num']],
+  exp:  [['cat','科目','select',CATS],['note','摘要','text'],['amt','金額','num']],
+};
+const KIND_NAME = { ship:'出荷', work:'作業', exp:'経費' };
+
+let cur = null;
+function showResult(r){
+  cur = r;
+  const box = $('result');
+  if (!r.kind){
+    box.innerHTML = '<div class="warn"><b>何の記録か分かりませんでした</b>'
+      + '<span>店舗と点数を言えば出荷、作業と時間を言えば作業、科目と金額を言えば経費として読みます。'
+      + '下の例文を押すと、言い方の見本が試せます。</span></div>';
+    return;
+  }
+  let h = '<div class="card"><span class="kind ' + (r.kind === 'exp' ? 'exp' : r.kind === 'work' ? 'work' : '')
+        + '">' + KIND_NAME[r.kind] + ' として読みました</span>';
+  FIELDS[r.kind].forEach(([key, label, type, opts]) => {
+    const v = r[key];
+    const miss = (v === null || v === undefined || v === '') && r.missing.includes(label.replace(/（.*/, ''));
+    h += '<div class="row"><label>' + label + '</label>';
+    if (type === 'select'){
+      h += '<select data-k="' + key + '" class="' + (v ? '' : 'miss') + '">'
+        + '<option value="">—</option>'
+        + opts.map(o => '<option' + (o === v ? ' selected' : '') + '>' + o + '</option>').join('')
+        + '</select>';
+    } else {
+      h += '<input data-k="' + key + '" class="' + (type === 'num' ? 'num ' : '')
+        + (v === null || v === undefined || v === '' ? 'miss' : '') + '"'
+        + (type === 'num' ? ' type="number" inputmode="numeric"' : ' type="text"')
+        + ' value="' + (v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;')) + '">';
+    }
+    h += '</div>';
+  });
+  if (r.kind === 'ship' && r.qty && r.price) h += '<p class="tot">' + (r.qty * r.price).toLocaleString() + '円</p>';
+  if (r.kind === 'exp'  && r.amt)            h += '<p class="tot">' + r.amt.toLocaleString() + '円</p>';
+  if (r.missing.length) h += '<p class="note" style="color:var(--amber)">'
+    + r.missing.join('と') + 'が聞き取れませんでした。赤い欄を埋めてください。</p>';
+  h += '<button class="ok" id="save">これで記録する</button>'
+     + '<button class="ghost" id="again">もう一度話す</button></div>';
+  box.innerHTML = h;
+
+  box.querySelectorAll('[data-k]').forEach(el => {
+    el.addEventListener('input', () => {
+      const k = el.dataset.k;
+      cur[k] = el.type === 'number' ? (el.value === '' ? null : +el.value) : el.value;
+      el.classList.toggle('miss', el.value === '');
+    });
+    el.addEventListener('change', () => {
+      const k = el.dataset.k;
+      cur[k] = el.type === 'number' ? (el.value === '' ? null : +el.value) : el.value;
+      el.classList.toggle('miss', el.value === '');
+    });
+  });
+  $('save').onclick = saveCur;
+  $('again').onclick = () => { if (!listening) startMic(); };
+}
+
+const logs = [];
+function saveCur(){
+  if (!cur) return;
+  let line = '', amt = '';
+  if (cur.kind === 'ship'){
+    if (!cur.crop || !cur.qty){ alert('品目と点数を入れてください'); return; }
+    line = cur.crop + ' → ' + (cur.store || '—') + ' ' + cur.qty + '点';
+    amt = cur.price ? (cur.qty * cur.price).toLocaleString() + '円' : '';
+  } else if (cur.kind === 'work'){
+    if (!cur.task){ alert('作業を選んでください'); return; }
+    line = (cur.crop ? cur.crop + ' ' : '') + cur.task
+         + (cur.got ? ' 収穫' + cur.got : '') + (cur.ng ? '（規格外' + cur.ng + '）' : '');
+    amt = cur.min ? cur.min + '分' : '';
+  } else {
+    if (!cur.cat || !cur.amt){ alert('科目と金額を入れてください'); return; }
+    line = cur.cat + (cur.note ? ' ' + cur.note : '');
+    amt = cur.amt.toLocaleString() + '円';
+  }
+  logs.unshift({ kind: KIND_NAME[cur.kind], line, amt });
+  renderLog();
+  $('result').innerHTML = '';
+  $('heard').textContent = '記録しました。続けて話せます。';
+  $('heard').className = 'tx dim';
+  cur = null;
+}
+function renderLog(){
+  const box = $('log');
+  if (!logs.length){ box.innerHTML = '<p class="empty">まだありません</p>'; return; }
+  box.innerHTML = logs.map(l =>
+    '<div class="log"><i>' + l.kind + '</i><b>' + l.line + '</b><em>' + l.amt + '</em></div>').join('');
+}
+
+/* ===== 例文 ===== */
+const EXAMPLES = [
+  ['ベビーリーフ 道の駅おおさとに12点 150円', '出荷'],
+  ['おてんとさん富谷に小松菜を8点 120円で', '出荷（言い回しを変えても読めます）'],
+  ['収穫 90分 ベビーリーフ 200 規格外12', '作業（収穫量と規格外まで）'],
+  ['防除を45分やった', '作業'],
+  ['諸材料費 ホームセンターで3480円', '経費'],
+  ['燃料 5200円', '経費（言い換えから科目を当てます）'],
+  ['十二点 道の駅 水菜 百円', '漢数字でも読めます'],
+];
+$('examples').innerHTML = EXAMPLES.map((e, i) =>
+  '<button class="ex" data-i="' + i + '">' + e[0] + '<span>' + e[1] + '</span></button>').join('');
+$('examples').onclick = e => {
+  const b = e.target.closest('[data-i]');
+  if (!b) return;
+  const t = EXAMPLES[+b.dataset.i][0];
+  $('heard').textContent = t;
+  $('heard').className = 'tx';
+  showResult(parse(t));
+  $('result').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+};
+$('manualGo').onclick = () => {
+  const t = $('manual').value.trim();
+  if (!t) return;
+  $('heard').textContent = t;
+  $('heard').className = 'tx';
+  showResult(parse(t));
+};
+
+/* ===== 音声認識 ===== */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false;
+
+function setWarn(){
+  const box = $('warnBox');
+  if (!SR){
+    box.innerHTML = '<div class="warn"><b>この画面では声を使えません</b>'
+      + '<span>音声認識に対応していないブラウザです。下の例文か「手で試す」で、読み取りの精度だけ確かめられます。</span></div>';
+    $('mic').disabled = true;
+    $('mic').textContent = '声は使えません';
+    return;
+  }
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost'){
+    box.innerHTML = '<div class="warn"><b>この開き方では声を使えません</b>'
+      + '<span>マイクは https のページでしか使えません。ファイルを直接開いた場合や、'
+      + '埋め込みで表示した場合は許可が下りません。'
+      + '下の例文か「手で試す」で、読み取りの精度だけ確かめられます。</span></div>';
+    $('mic').disabled = true;
+    $('mic').textContent = '声は使えません（https が必要）';
+  }
+}
+setWarn();
+
+function startMic(){
+  if (!SR || $('mic').disabled) return;
+  if (listening){ try { rec.stop(); } catch(e){} return; }
+  rec = new SR();
+  rec.lang = 'ja-JP';
+  rec.interimResults = true;
+  rec.continuous = false;
+  rec.maxAlternatives = 1;
+
+  rec.onstart = () => {
+    listening = true;
+    $('mic').dataset.on = '1';
+    $('mic').innerHTML = '<span class="pulse"></span>聞いています（押すと止めます）';
+    $('heard').textContent = '…';
+    $('heard').className = 'tx dim';
+    $('result').innerHTML = '';
+  };
+  rec.onresult = ev => {
+    let txt = '';
+    for (let i = 0; i < ev.results.length; i++) txt += ev.results[i][0].transcript;
+    $('heard').textContent = txt;
+    $('heard').className = 'tx';
+    if (ev.results[ev.results.length - 1].isFinal){
+      showResult(parse(txt));
+    }
+  };
+  rec.onerror = ev => {
+    listening = false;
+    resetMic();
+    const msg = ev.error === 'not-allowed' || ev.error === 'service-not-allowed'
+      ? 'マイクの使用が許可されませんでした。設定から許可してください。'
+      : ev.error === 'no-speech' ? '声が聞こえませんでした。もう一度押してください。'
+      : ev.error === 'network' ? '電波が届いていないようです。音声認識には通信が要ります。'
+      : '聞き取れませんでした（' + ev.error + '）';
+    $('heard').textContent = msg;
+    $('heard').className = 'tx dim';
+  };
+  rec.onend = () => { listening = false; resetMic(); };
+
+  try { rec.start(); }
+  catch(e){ $('heard').textContent = '始められませんでした: ' + e.message; }
+}
+function resetMic(){
+  $('mic').dataset.on = '0';
+  $('mic').textContent = '話して記録する';
+}
+$('mic').onclick = startMic;
+renderLog();
+</script>
+</body>
+</html>
