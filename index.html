@@ -522,6 +522,24 @@
   .auditbar span{display:block;font-size:.8rem;color:var(--ink-2);line-height:1.5}
   .auditbar span+span{margin-top:3px;color:var(--ink-3)}
   .sh-card.bad{box-shadow:inset 3px 0 0 var(--red);background:var(--red-l)}
+  /* 経費の取り込み */
+  #impText{width:100%;border:1px solid var(--line);border-radius:8px;background:var(--surf);
+    color:var(--ink);font:inherit;font-size:.92rem;padding:10px;line-height:1.6;
+    -webkit-appearance:none;resize:vertical}
+  .improw{display:flex;align-items:flex-start;gap:9px;padding:9px 0;
+    border-bottom:1px solid var(--line2)}
+  .improw:last-child{border-bottom:0}
+  .improw.ng{opacity:.55}
+  .impL{flex:1;min-width:0}
+  .impd{display:block;font-size:.82rem;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .impn{display:block;font-size:.93rem;color:var(--ink);margin-top:2px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .impa{flex:none;font-size:1rem;font-weight:700;font-variant-numeric:tabular-nums}
+  .imptag{display:inline-block;font-size:.72rem;font-weight:700;padding:1px 6px;
+    border-radius:4px;margin-left:6px;vertical-align:1px}
+  .imptag.dup{background:var(--amber-l);color:var(--amber)}
+  .imptag.bad{background:var(--red-l);color:var(--red)}
+  .improw select{margin-top:4px;font-size:.82rem;padding:5px 7px;min-height:34px}
   /* 毎日の作業 */
   .rtrow{display:flex;align-items:center;gap:10px;padding:11px 0;
     border-bottom:1px solid var(--line2);min-width:0}
@@ -811,8 +829,10 @@
     <div class="fld"><span class="lb">摘要（店名・品名）</span>
       <input type="text" id="xpNote" placeholder="例：○○種苗店 培土20L" list="noteList"><datalist id="noteList"></datalist></div>
     <button class="save stick" id="xpSave">経費を記録</button>
+    <button class="save alt" type="button" id="impOpen" style="margin-top:9px">まとめて取り込む</button>
     <p class="note">よく買うものは、記録すると上にボタンとして並びます。次からはタップだけで入ります。<br>
-    道の駅の販売手数料は自動で計算されるので、入力は不要です。</p>
+    道の駅の販売手数料は自動で計算されるので、入力は不要です。<br>
+    伝票をまとめて入れるときは「まとめて取り込む」から。</p>
   </div>
 
   </section>
@@ -1062,6 +1082,29 @@
     <button type="button" data-t="stpMin" data-d="15">＋</button></div></div>
   <button class="save" id="stpOk">追加する</button>
   <button class="save alt" id="stpCancel" style="margin-top:9px;border-color:var(--line);color:var(--ink-3)">やめる</button>
+</div></div>
+
+<div class="sheet" id="sheetImp"><div class="sheet-in">
+  <div class="sheet-t">経費をまとめて取り込む</div>
+  <div class="sheet-s">伝票の写真をチャットのAIに読ませて、返ってきた一覧をここに貼ります。
+    いまの記録は消えません。追加されるだけです。</div>
+
+  <div class="fld">
+    <span class="lb">① AIに渡す文章</span>
+    <button class="save alt" type="button" id="impCopy">読み取りのお願い文をコピー</button>
+    <p class="note" style="margin:7px 0 0">これをコピーして、伝票の写真と一緒にチャットへ送ってください。
+      返事をそのまま下に貼れば取り込めます。</p>
+  </div>
+
+  <div class="fld" id="fldImpText"><span class="lb">② 返ってきた一覧を貼る</span>
+    <textarea id="impText" rows="6" placeholder="2026-11-05	諸材料費	ホームセンター山新 培土20L	3480
+2026-11-08	肥料費	JAグリーン 化成肥料	12600"></textarea></div>
+
+  <button class="save alt" type="button" id="impRead">読み取る</button>
+  <div id="impPrev"></div>
+
+  <button class="save" id="impOk" style="display:none">取り込む</button>
+  <button class="save alt" id="impCancel" style="margin-top:9px;border-color:var(--line);color:var(--ink-3)">やめる</button>
 </div></div>
 
 <div class="sheet" id="sheetRt"><div class="sheet-in">
@@ -2842,6 +2885,114 @@ $('stpOk').onclick=()=>{
   buzz(20);toast('「'+nm+'」を '+md(d)+' に追加しました');
 };
 
+/* ========== 経費をまとめて取り込む ========== */
+// 伝票の写真をAIに読ませるときの、お願い文
+function impPrompt(){
+  return '添付した伝票（領収書・納品書）の写真を読み取って、次の形式だけを返してください。'
+    +'説明や前置きは書かないでください。\n\n'
+    +'1行に1件、タブ区切りで、左から\n'
+    +'日付(YYYY-MM-DD)　科目　支払先と品名　金額(数字のみ)\n\n'
+    +'科目は次のどれかから選んでください：\n'
+    +CATS.join('／')+'\n\n'
+    +'注意\n'
+    +'・金額は税込の合計額。小計や税額ではなく、実際に払った金額。\n'
+    +'・合計が読み取れない伝票は、その行の金額を 0 にしてください。\n'
+    +'・日付が和暦のときは西暦に直してください。\n'
+    +'・1枚の伝票は1行にまとめてください。品目ごとに分けないでください。\n'
+    +'・迷った科目は 雑費 にしてください。\n\n'
+    +'例\n2026-11-05\t諸材料費\tホームセンター山新 培土20L\t3480';
+}
+let impRows=[];
+// 貼り付けた文字から、日付・科目・支払先・金額を拾う
+function impParse(txt){
+  const out=[];
+  String(txt||'').split(/\r?\n/).forEach(line=>{
+    const raw=line.trim();
+    if(!raw)return;
+    if(/^(日付|date)\b/i.test(raw))return;              // 見出し行は飛ばす
+    // 1,234 のような桁区切りのカンマは、区切り文字と間違えないよう先に外す
+    let t2=raw;
+    for(let k=0;k<3;k++)t2=t2.replace(/(\d)[,，](\d{3})(?!\d)/g,'$1$2');
+    // タブ・連続スペース・全角スペース・カンマのどれでも区切れるように
+    let c=t2.split(/\t|\s{2,}|　+|[,，]/).map(x=>x.trim()).filter(x=>x!=='');
+    if(c.length<2)c=t2.split(/\s+/).filter(x=>x!=='');
+    const row={raw:t2, date:null, cat:null, note:'', amt:0, bad:[]};
+    // 日付
+    for(let i=0;i<c.length;i++){
+      const d=impDate(c[i]);
+      if(d){row.date=d;c.splice(i,1);break}
+    }
+    // 金額（いちばん右の数字らしいもの）
+    for(let i=c.length-1;i>=0;i--){
+      const v=impAmt(c[i]);
+      if(v!=null){row.amt=v;c.splice(i,1);break}
+    }
+    // 科目
+    for(let i=0;i<c.length;i++){
+      const k=c[i].replace(/\s/g,'');
+      if(CATS.includes(k)){row.cat=k;c.splice(i,1);break}
+    }
+    row.note=c.join(' ').trim();
+    if(!row.date)row.bad.push('日付');
+    if(!(row.amt>0))row.bad.push('金額');
+    if(!row.cat)row.cat='雑費';
+    out.push(row);
+  });
+  return out;
+}
+function impDate(v){
+  let m=String(v).match(/^(\d{4})[-\/.年](\d{1,2})[-\/.月](\d{1,2})日?$/);
+  if(m)return m[1]+'-'+pad2(+m[2])+'-'+pad2(+m[3]);
+  m=String(v).match(/^(\d{1,2})[-\/.月](\d{1,2})日?$/);   // 月日だけなら今年として扱う
+  if(m){
+    const mm=+m[1], dd=+m[2];
+    if(mm>=1&&mm<=12&&dd>=1&&dd<=31)return today().slice(0,4)+'-'+pad2(mm)+'-'+pad2(dd);
+  }
+  return null;
+}
+function impAmt(v){
+  const t=String(v).replace(/[¥￥,，\s円]/g,'').replace(/[０-９]/g,ch=>'0123456789'[ch.charCodeAt(0)-0xFF10]);
+  if(!/^-?\d+$/.test(t))return null;
+  const n=+t;
+  return (Number.isFinite(n)&&n>=0&&n<1e9)?n:null;
+}
+// 同じ日・同じ金額の記録がすでにあれば、重複かもしれないと印をつける
+function impDup(r){
+  return (D.exp||[]).some(x=>x.date===r.date&&x.amt===r.amt);
+}
+function renderImpPrev(){
+  const box=$('impPrev');if(!box)return;
+  if(!impRows.length){
+    box.innerHTML='<p class="note" style="margin:12px 0 0">読み取れる行がありませんでした。'
+      +'1行に「日付 科目 支払先 金額」が並んでいるか確かめてください。</p>';
+    $('impOk').style.display='none';return;
+  }
+  const good=impRows.filter(r=>!r.bad.length);
+  let h='<p class="tot num" style="margin:14px 0 4px">'+good.length+'件 ・ '
+    +yen(good.reduce((a,r)=>a+r.amt,0))+'円'
+    +(impRows.length>good.length?'　<span style="color:var(--red)">読めない行 '+(impRows.length-good.length)+'</span>':'')
+    +'</p>';
+  impRows.forEach((r,i)=>{
+    const dup=!r.bad.length&&impDup(r);
+    h+='<div class="improw'+(r.bad.length?' ng':'')+'">'
+      +'<div class="impL">'
+        +'<span class="impd">'+(r.date?md(r.date):'日付なし')
+          +(r.bad.length?'<span class="imptag bad">'+r.bad.join('・')+'が読めない</span>':'')
+          +(dup?'<span class="imptag dup">重複かも</span>':'')+'</span>'
+        +'<span class="impn">'+esc(r.note||'（摘要なし）')+'</span>'
+        +'<select data-impcat="'+i+'">'+CATS.map(c=>
+            '<option value="'+esc(c)+'"'+(c===r.cat?' selected':'')+'>'+esc(c)+'</option>').join('')
+         +'</select>'
+      +'</div>'
+      +'<b class="impa">'+(r.amt?yen(r.amt)+'円':'—')+'</b></div>';
+  });
+  h+='<p class="note">金額の桁をもう一度だけ見てください。読めない行は取り込まれません。'
+    +'「重複かも」は、同じ日に同じ金額の記録がすでにある行です。</p>';
+  box.innerHTML=h;
+  $('impOk').style.display=good.length?'block':'none';
+  $('impOk').textContent=good.length+'件を取り込む';
+}
+
 /* ========== 毎日の作業：一覧と編集 ========== */
 function renderAudit(){
   const box=$('auditBox');if(!box)return;
@@ -3074,6 +3225,10 @@ function askText(title,sub,def,okLabel){
     setTimeout(()=>{try{$('cInput').focus();$('cInput').select()}catch(e){}},60);
   });
 }
+document.addEventListener('change',e=>{
+  const ic=e.target.closest('[data-impcat]');
+  if(ic){const r=impRows[+ic.dataset.impcat];if(r)r.cat=ic.value}
+});
 document.addEventListener('input',e=>{
   const bi=e.target.closest('[data-bsi]');
   if(bi){setShipQty(bi.dataset.bsi,+bi.value||0);
@@ -4204,6 +4359,48 @@ $('sSave').onclick=async()=>{
   shipQty={};shipPrice={};clearDraft();renderShipRows();
   save();refreshAll();buzz(25);
   toast(sel.crop+' '+plan.length+'店 '+q+'点 '+yen(amt)+'円',true);
+};
+$('impOpen').onclick=()=>{
+  impRows=[];$('impText').value='';$('impPrev').innerHTML='';
+  $('impOk').style.display='none';
+  $('sheetImp').classList.add('on');
+};
+$('impCancel').onclick=()=>$('sheetImp').classList.remove('on');
+$('sheetImp').onclick=e=>{if(e.target.id==='sheetImp')$('sheetImp').classList.remove('on')};
+$('impCopy').onclick=async()=>{
+  const t=impPrompt();
+  try{
+    await navigator.clipboard.writeText(t);
+    toast('コピーしました。写真と一緒に送ってください');buzz(20);
+  }catch(e){
+    // コピーできない端末では、選べる形で出す
+    $('impText').value=t;$('impText').select();
+    toast('下の欄に出しました。長押しでコピーしてください');
+  }
+};
+$('impRead').onclick=()=>{
+  impRows=impParse($('impText').value);
+  $('fldImpText').classList.remove('bad');
+  if(!impRows.length){
+    $('fldImpText').classList.add('bad');
+    toast('貼り付けてから押してください');return;
+  }
+  renderImpPrev();buzz(20);
+  $('impPrev').scrollIntoView({block:'nearest',behavior:'smooth'});
+};
+$('impOk').onclick=()=>{
+  const good=impRows.filter(r=>!r.bad.length);
+  if(!good.length)return;
+  const added=[];
+  good.forEach(r=>{
+    const rec={id:uid(),date:r.date,cat:r.cat,note:r.note,amt:r.amt};
+    D.exp.push(rec);added.push({arr:'exp',id:rec.id});
+  });
+  markAdd(added);
+  save();
+  $('sheetImp').classList.remove('on');
+  renderCats();renderQuick();refreshAll();buzz(25);
+  toast(good.length+'件 '+yen(good.reduce((a,r)=>a+r.amt,0))+'円を取り込みました',true);
 };
 $('rtAdd').onclick=()=>openRtSheet(null);
 $('rtCancel').onclick=closeRtSheet;
