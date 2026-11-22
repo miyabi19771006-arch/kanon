@@ -1099,6 +1099,8 @@
   <div class="sheet-s">直売所から届いた売上メールを、本文ごと貼ってください。
     何通まとめて貼っても構いません。いまの記録は消えません。</div>
   <p class="errbar" id="errSimp"></p>
+  <div class="fld ctr" id="fldSimpDate"><span class="lb">日付が書いていないメールの日付</span>
+    <input type="date" id="simpDate"></div>
   <div class="fld" id="fldSimpText"><span class="lb">メール本文を貼る</span>
     <textarea id="simpText" rows="7" placeholder="【netDoA産直　売上のご連絡】道の駅おおさと&#10;&#10;2026年11月22日 15時17分 現在&#10;…"></textarea></div>
   <button class="save alt" type="button" id="simpRead">読み取る</button>
@@ -1589,7 +1591,7 @@ function fitFigs(){
 function hydrate(){
   ['crops','stores','tasks','ship','moves','exp','work','spray','fert','harv','plots']
     .forEach(k=>{ if(!Array.isArray(D[k]))D[k]=JSON.parse(JSON.stringify(DEF[k])) });
-  D.fees??={};D.tpl??={};D.lastPrice??={};D.rlog??={};D.alias??={};
+  D.fees??={};D.tpl??={};D.lastPrice??={};D.rlog??={};D.alias??={};D.calias??={};
   if(!Array.isArray(D.routines))D.routines=[];
   D.plots.forEach(p=>{if(!Array.isArray(p.steps))p.steps=[]});
   D.routines.forEach(r=>{if(!Array.isArray(r.dows))r.dows=[]});
@@ -2915,71 +2917,129 @@ const Z2H=t=>String(t||'').replace(/[０-９]/g,c=>'0123456789'[c.charCodeAt(0)-
   .replace(/[（）]/g,c=>c==='（'?'(':')').replace(/，/g,',').replace(/　/g,' ');
 const NUM=t=>{const v=String(t).replace(/[,\s円点]/g,'');return /^\d+$/.test(v)?+v:null};
 
-function simpParse(txt){
+// 直売所によって書式が違うので、共通の形に直してから読む
+const SPLIT_RE=/売上のご連絡|産直売上情報|新みやぎサービス|本日の売上状況/;
+// 区切り線（-----）を電話番号と間違えないよう、数字の個数で見る
+const isPhone=t=>{const d=String(t).replace(/\D/g,'');
+  return d.length>=10&&d.length<=11&&/^[\d\-()+ ]+$/.test(String(t).trim())};
+const QTY_RE=/^\s*([\d,]+)\s*点\s+([\d,]+)\s*円\s*$/;
+const ONE_RE=/^\s*(.+?)\s*\(\s*単価?\s*([\d,]+)\s*円\s*\)\s+([\d,]+)\s*点\s+([\d,]+)\s*円/;
+const SKIP_RE=/合計|小計|商品名|売上金額|^-+$|^=+$|送信専用|お知らせします|売上状況です|現在|営業日|^点\s*数/;
+
+function simpParse(txt,fallbackDate){
   const src=Z2H(txt).replace(/\r\n?/g,'\n');
-  // メール1通ずつに切り分ける（件名の行か、日付の行で始まる）
-  const parts=src.split(/\n(?=【[^】]*売上[^】]*】)/).filter(x=>x.trim());
+  const lines=src.split('\n');
+  // メール1通ずつに切り分ける
+  const starts=[];
+  lines.forEach((l,i)=>{if(SPLIT_RE.test(l))starts.push(i)});
+  const blocks=[];
+  if(!starts.length)blocks.push(lines);
+  else{
+    if(starts[0]>0)starts.unshift(0);
+    starts.forEach((st,k)=>blocks.push(lines.slice(st,starts[k+1]??lines.length)));
+  }
   const mails=[];
-  parts.forEach(part=>{
-    const m=part.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日\s*(?:(\d{1,2})\s*時\s*(\d{1,2})\s*分)?/);
-    if(!m)return;
-    const date=m[1]+'-'+pad2(+m[2])+'-'+pad2(+m[3]);
-    const at=(m[4]?pad2(+m[4]):'00')+':'+(m[5]?pad2(+m[5]):'00');
-    // 店舗名：件名の【…】のあと、または本文末尾の「店舗名：」
-    let store=null;
-    let sm=part.match(/店舗名\s*[:：]\s*(.+)/);
-    if(sm)store=sm[1].trim();
-    if(!store){sm=part.match(/^【[^】]*】\s*(.+)/m);if(sm)store=sm[1].trim()}
-    const items=[];
-    part.split('\n').forEach(line=>{
-      if(/合計/.test(line))return;
-      // 「小松菜 (単価100円)  1点  100円」
-      const im=line.match(/^\s*(.+?)\s*\(\s*単価\s*([\d,]+)\s*円\s*\)\s+([\d,]+)\s*点\s+([\d,]+)\s*円/);
-      if(im){
-        const qty=NUM(im[3]), price=NUM(im[2]), amt=NUM(im[4]);
-        if(qty>0&&price>0)items.push({crop:im[1].trim(),qty,price,amt});
+  blocks.forEach(bl=>{
+    const text=bl.join('\n');
+    if(!bl.some(l=>QTY_RE.test(l)||ONE_RE.test(l)))return;
+    // 日付：書いてあればそれ、なければ指定の日付
+    const dm=text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+    const date=dm?(dm[1]+'-'+pad2(+dm[2])+'-'+pad2(+dm[3])):(fallbackDate||today());
+    const guessed=!dm;
+    const tm=text.match(/(\d{1,2})\s*(?:時|:)\s*(\d{1,2})\s*分?\s*現在/);
+    const at=tm?(pad2(+tm[1])+':'+pad2(+tm[2])):'';
+    // 店舗名：いくつかの書き方を順に探す
+    let base=null;
+    let m=text.match(/店舗名\s*[:：]\s*(.+)/);           if(m)base=m[1];
+    if(!base){m=bl.slice(0,3).join('\n').match(/^【[^】]*】[ \t]*(\S.*)$/m); if(m)base=m[1]}
+    if(!base){                                            // 電話番号の上の行
+      for(let i=1;i<bl.length;i++){
+        const prev=bl[i-1].trim();
+        if(isPhone(bl[i])&&prev&&!SKIP_RE.test(prev.replace(/\s/g,''))&&!QTY_RE.test(prev)){base=prev;break}
       }
+    }
+    if(!base){m=bl.find(l=>l.trim()&&!SPLIT_RE.test(l));  if(m)base=m}
+    base=base?base.trim():null;
+
+    const items=[];
+    let section=null, pend=null;
+    bl.forEach(line=>{
+      const t=line.trim();
+      if(!t){pend=null;return}
+      const sec=t.match(/^<\s*(.+?)\s*>$/);               // <元気くん市場仙台南店>
+      if(sec){section=sec[1];pend=null;return}
+      const one=t.match(ONE_RE);                          // 1行に全部ある書き方
+      if(one){
+        items.push({name:one[1],price:NUM(one[2]),qty:NUM(one[3]),amt:NUM(one[4]),store:section||base});
+        pend=null;return;
+      }
+      const q=t.match(QTY_RE);                            // 「17点 4,760円」だけの行
+      if(q){
+        const qty=NUM(q[1]), amt=NUM(q[2]);
+        if(pend&&qty>0){
+          const pm=pend.match(/[(（]\s*単価?\s*([\d,]+)\s*円\s*[)）]/);
+          const price=pm?NUM(pm[1]):Math.round(amt/qty);
+          items.push({name:pend,price,qty,amt,store:section||base});
+        }
+        pend=null;return;
+      }
+      if(SKIP_RE.test(t.replace(/\s/g,''))||/様$/.test(t)){pend=null;return}
+      pend=t;                                             // 次に数量行が来たら、これが品名
     });
-    if(items.length)mails.push({date,at,store,items,raw:part});
+    if(items.length)mails.push({date,at,guessed,items});
   });
-  // 同じ日・同じ店は、いちばん遅い時刻のものだけ残す
+  // 同じ日・同じ店は、いちばん遅い時刻の1通だけを使う（速報は累計のため）
   const best={};
   mails.forEach(m=>{
-    const k=(m.store||'?')+'|'+m.date;
-    if(!best[k]||m.at>best[k].at)best[k]=m;
+    const k=(m.items[0]&&m.items[0].store||'?')+'|'+m.date;
+    if(!best[k]||(m.at||'')>=(best[k].at||''))best[k]=m;
   });
-  const kept=Object.values(best).sort((a,b)=>a.date.localeCompare(b.date)||String(a.store).localeCompare(String(b.store)));
+  const kept=Object.values(best).sort((a,b)=>a.date.localeCompare(b.date));
   return {mails:kept, dropped:mails.length-kept.length};
 }
 
+// 品名から、生産者名と単価の括弧を落とす
+function simpCropName(raw){
+  let n=String(raw||'').trim();
+  n=n.replace(/[(（]\s*単価?\s*[\d,]+\s*円\s*[)）]/g,'').trim();
+  if(n.includes('/'))n=n.split('/')[0].trim();
+  return n;
+}
+// 登録してある品目に当てる。覚えた読み替えも使う
+function simpCrop(raw){
+  const n=simpCropName(raw);
+  if(D.crops.includes(n))return n;
+  if(D.calias&&D.calias[n]&&D.crops.includes(D.calias[n]))return D.calias[n];
+  const bare=n.replace(/[【（(].*$/,'').trim();          // 枝豆【秘伝】→枝豆
+  if(bare&&D.crops.includes(bare))return bare;
+  return null;
+}
 // 店名が登録と違うときの読み替えを覚えておく
 function simpStore(name){
   if(!name)return null;
-  if(D.stores.includes(name))return name;
-  if(D.alias&&D.alias[name]&&D.stores.includes(D.alias[name]))return D.alias[name];
-  // 空白や「店」の有無だけの違いは自動で合わせる
+  const n=String(name).trim();
+  if(D.stores.includes(n))return n;
+  if(D.alias&&D.alias[n]&&D.stores.includes(D.alias[n]))return D.alias[n];
   const norm=x=>String(x).replace(/[\s　]/g,'').replace(/店$/,'');
-  const hit=D.stores.find(st=>norm(st)===norm(name));
-  return hit||null;
+  return D.stores.find(st=>norm(st)===norm(n))||null;
 }
 
 let simpRows=[];
 function simpBuild(parsed){
   const rows=[];
   parsed.mails.forEach(m=>{
-    const store=simpStore(m.store);
     m.items.forEach(it=>{
-      const crop=D.crops.includes(it.crop)?it.crop:null;
-      const r={date:m.date,at:m.at,rawStore:m.store,store,crop,rawCrop:it.crop,
-               qty:it.qty,price:it.price,skip:false,why:[]};
-      if(!store)r.why.push('店舗が未登録');
-      if(!crop)r.why.push('品目が未登録');
-      rows.push(r);
+      rows.push({date:m.date,at:m.at,guessed:m.guessed,
+        rawStore:it.store,store:simpStore(it.store),
+        rawCrop:simpCropName(it.name),crop:simpCrop(it.name),
+        qty:it.qty,price:it.price,skip:false,why:[]});
     });
   });
-  // 棚に足りるか、すでに取り込んでいないかを見る
   const used={};
   rows.forEach(r=>{
+    if(!r.store)r.why.push('店舗が未登録');
+    if(!r.rawCrop)r.why.push('品名が読めない');
+    else if(!r.crop)r.why.push('品目が未登録');
     if(r.why.length){r.skip=true;return}
     const k=r.store+'\u0001'+r.crop;
     const st=stockOf(r.store,r.crop,r.date);
@@ -3012,13 +3072,25 @@ function renderSimpPrev(dropped){
     if(head!==cur){
       cur=head;
       h+='<div class="simph"><b>'+esc(r.store||r.rawStore||'店舗不明')+'</b>'
-        +'<span>'+md(r.date)+' '+r.at+' 時点</span></div>';
+        +'<span>'+md(r.date)+(r.at?' '+r.at+' 時点':'')
+        +(r.guessed?'（日付の指定）':'')+'</span></div>';
+      if(!r.store&&r.rawStore){
+        h+='<div style="padding:0 0 8px"><select data-simps="'+esc(r.rawStore)+'">'
+          +'<option value="">「'+esc(r.rawStore)+'」はどの店？</option>'
+          +D.stores.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')
+          +'</select></div>';
+      }
     }
+    const needCrop=r.why.includes('品目が未登録');
     h+='<div class="improw'+(r.skip?' ng':'')+'">'
       +'<div class="impL"><span class="impn">'+esc(r.rawCrop)
         +(r.why.length?'<span class="imptag '+(r.dup?'dup':'bad')+'">'+esc(r.why.join('・'))+'</span>':'')
         +'</span>'
-      +'<span class="impd">'+r.qty+'点 × '+r.price+'円</span></div>'
+      +'<span class="impd">'+r.qty+'点 × '+r.price+'円</span>'
+      +(needCrop?'<select data-simpc="'+esc(r.rawCrop)+'"><option value="">どの品目にする？</option>'
+          +D.crops.filter(c=>c!=='共通').map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')
+          +'<option value="__new">「'+esc(r.rawCrop)+'」を品目に追加</option></select>':'')
+      +'</div>'
       +'<b class="impa">'+yen(r.qty*r.price)+'円</b></div>';
   });
   h+='<p class="note">このメールは「その日の累計」です。同じ日の分をあとからもう一度取り込まないよう、'
@@ -3369,6 +3441,23 @@ function askText(title,sub,def,okLabel){
   });
 }
 document.addEventListener('change',e=>{
+  const ss=e.target.closest('[data-simps]');
+  if(ss&&ss.value){
+    D.alias??={};D.alias[ss.dataset.simps]=ss.value;save();
+    simpRedo();toast('この店として覚えました');return;
+  }
+  const sc=e.target.closest('[data-simpc]');
+  if(sc&&sc.value){
+    const raw=sc.dataset.simpc;
+    if(sc.value==='__new'){
+      if(!D.crops.includes(raw)){const i=D.crops.indexOf('共通');
+        if(i>=0)D.crops.splice(i,0,raw); else D.crops.push(raw)}
+      save();renderForms();renderSettings();toast('「'+raw+'」を品目に追加しました');
+    } else {
+      D.calias??={};D.calias[raw]=sc.value;save();toast('この品目として覚えました');
+    }
+    simpRedo();return;
+  }
   const ic=e.target.closest('[data-impcat]');
   if(ic){const r=impRows[+ic.dataset.impcat];if(r)r.cat=ic.value}
 });
@@ -4519,14 +4608,21 @@ $('sSave').onclick=async()=>{
 };
 $('simpOpen').onclick=()=>{
   simpRows=[];$('simpText').value='';$('simpPrev').innerHTML='';
+  $('simpDate').value=$('rcDate')&&$('rcDate').value||today();
   $('simpOk').style.display='none';$('errSimp').classList.remove('on');
   $('sheetSimp').classList.add('on');
 };
 $('simpCancel').onclick=()=>$('sheetSimp').classList.remove('on');
 $('sheetSimp').onclick=e=>{if(e.target.id==='sheetSimp')$('sheetSimp').classList.remove('on')};
+function simpRedo(){
+  const parsed=simpParse($('simpText').value,$('simpDate').value||today());
+  simpRows=simpBuild(parsed);
+  renderSimpPrev(parsed.dropped);
+}
+$('simpDate').addEventListener('change',()=>{if(simpRows.length)simpRedo()});
 $('simpRead').onclick=()=>{
   $('fldSimpText').classList.remove('bad');
-  const parsed=simpParse($('simpText').value);
+  const parsed=simpParse($('simpText').value,$('simpDate').value||today());
   simpRows=simpBuild(parsed);
   if(!simpRows.length){
     $('fldSimpText').classList.add('bad');
@@ -4540,19 +4636,11 @@ $('simpOk').onclick=()=>{
   if(!good.length)return;
   const added=[];let amt=0;
   good.forEach(r=>{
-    // 古いロットから順に消し込む（単価違いが混ざっていても正しく出る）
-    const L=lotsOf(r.store,r.crop,r.date).lots;
-    let rest=r.qty;
-    while(rest>0){
-      const lot=L.find(x=>x.qty>0);
-      const pr=lot?lot.price:r.price;
-      const t=lot?Math.min(lot.qty,rest):rest;
-      if(lot)lot.qty-=t;
-      const rec={id:uid(),date:r.date,type:'sold',crop:r.crop,store:r.store,qty:t,price:pr};
-      D.moves.push(rec);added.push({arr:'moves',id:rec.id});
-      amt+=t*pr;rest-=t;
-      if(!lot)break;
-    }
+    // メールに書いてある単価をそのまま使う。
+    // 棚の消し込みは数量だけで決まるので、ロットの評価はこれで狂わない
+    const rec={id:uid(),date:r.date,type:'sold',crop:r.crop,store:r.store,qty:r.qty,price:r.price};
+    D.moves.push(rec);added.push({arr:'moves',id:rec.id});
+    amt+=r.qty*r.price;
   });
   markAdd(added);
   save();$('sheetSimp').classList.remove('on');
