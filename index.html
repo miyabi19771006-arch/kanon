@@ -618,7 +618,7 @@
 
   .toast{position:fixed;left:14px;right:14px;bottom:calc(86px + env(safe-area-inset-bottom));
     width:max-content;max-width:calc(100% - 28px);margin:0 auto;
-    background:var(--inv-bg);color:var(--inv-fg);padding:11px 20px;border-radius:22px;font-size:.9rem;opacity:0;pointer-events:none;transition:opacity .18s;z-index:30;font-weight:600}
+    background:var(--inv-bg);color:var(--inv-fg);padding:11px 20px;border-radius:22px;font-size:.9rem;opacity:0;pointer-events:none;transition:opacity .18s;z-index:70;font-weight:600}
   .toast.on{opacity:1}
   .toast>span{min-width:0;overflow-wrap:break-word;word-break:normal;line-break:strict}
   .toast.act{display:flex;align-items:center;gap:12px;padding:10px 10px 10px 18px}
@@ -3761,6 +3761,20 @@ if('serviceWorker' in navigator && location.protocol.startsWith('http')){
     });
   }).catch(()=>{});
 }
+// シートが新しく開いたら、前のトーストは引っ込める
+// （「取り消す」がダイアログの上に浮いて、押し間違えるのを防ぐ）
+let openSheets=new Set();
+new MutationObserver(()=>{
+  const now=new Set(document.querySelectorAll('.sheet.on'));
+  let opened=false;
+  now.forEach(el=>{if(!openSheets.has(el))opened=true});   // 重なって開いても拾えるように
+  if(opened){
+    const el=$('toast');
+    if(el&&el.classList.contains('on')){el.classList.remove('on');clearTimeout(tT)}
+  }
+  openSheets=now;
+}).observe(document.body,{subtree:true,attributes:true,attributeFilter:['class','style']});
+
 function showUpdate(){
   let el=$('updBar');
   if(!el){
@@ -4368,14 +4382,36 @@ $('impOpen').onclick=()=>{
 $('impCancel').onclick=()=>$('sheetImp').classList.remove('on');
 $('sheetImp').onclick=e=>{if(e.target.id==='sheetImp')$('sheetImp').classList.remove('on')};
 $('impCopy').onclick=async()=>{
-  const t=impPrompt();
-  try{
-    await navigator.clipboard.writeText(t);
-    toast('コピーしました。写真と一緒に送ってください');buzz(20);
-  }catch(e){
-    // コピーできない端末では、選べる形で出す
-    $('impText').value=t;$('impText').select();
-    toast('下の欄に出しました。長押しでコピーしてください');
+  const b=$('impCopy'), t=impPrompt();
+  const flash=(msg,ok)=>{
+    b.textContent=msg;
+    b.style.borderColor=ok?'var(--green)':'var(--amber)';
+    b.style.color=ok?'var(--green)':'var(--amber)';
+    clearTimeout(b._t);
+    b._t=setTimeout(()=>{b.textContent='読み取りのお願い文をコピー';
+      b.style.borderColor='';b.style.color=''},2600);
+  };
+  let done=false;
+  try{ await navigator.clipboard.writeText(t); done=true; }
+  catch(e){
+    // 端末によっては上の方法が使えないので、古いやり方でもう一度試す
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=t;ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.select();ta.setSelectionRange(0,t.length);
+      done=document.execCommand('copy');
+      ta.remove();
+    }catch(e2){}
+  }
+  if(done){
+    flash('✓ コピーしました',true);
+    toast('コピーしました。伝票の写真と一緒に送ってください');buzz(20);
+  } else {
+    // どうしてもコピーできない端末では、貼り付け欄に出して選べるようにする
+    $('impText').value=t;
+    try{$('impText').focus();$('impText').setSelectionRange(0,t.length)}catch(e3){}
+    flash('下の欄を長押しでコピー',false);
+    toast('コピーできなかったので、下の欄に出しました');buzz([40,60,40]);
   }
 };
 $('impRead').onclick=()=>{
