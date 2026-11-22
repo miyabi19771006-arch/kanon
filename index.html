@@ -2926,6 +2926,27 @@ const QTY_RE=/^\s*([\d,]+)\s*点\s+([\d,]+)\s*円\s*$/;
 const ONE_RE=/^\s*(.+?)\s*\(\s*単価?\s*([\d,]+)\s*円\s*\)\s+([\d,]+)\s*点\s+([\d,]+)\s*円/;
 const SKIP_RE=/合計|小計|商品名|売上金額|^-+$|^=+$|送信専用|お知らせします|売上状況です|現在|営業日|^点\s*数/;
 
+// 「日付 店舗 品目 点数 単価」を1行ずつ並べた形も読めるようにする
+function simpTsv(src,fallbackDate){
+  const g={};
+  src.split('\n').forEach(line=>{
+    const t=line.trim();
+    if(!t||/^(日付|date)\b/i.test(t))return;
+    let x=t;
+    for(let k=0;k<3;k++)x=x.replace(/(\d)[,，](\d{3})(?!\d)/g,'$1$2');
+    const c=x.split(/\t|\s{2,}|　+|[,，]/).map(v=>v.trim()).filter(v=>v!=='');
+    if(c.length<5)return;
+    const date=impDate(c[0])||(/^\d/.test(c[0])?null:fallbackDate);
+    if(!date)return;
+    const qty=NUM(c[c.length-2]), price=NUM(c[c.length-1]);
+    if(!(qty>0)||!(price>0))return;
+    const store=c[1], name=c.slice(2,c.length-2).join(' ');
+    if(!store||!name)return;
+    const k=store+'\u0001'+date;
+    (g[k]??={date,at:'',guessed:false,items:[]}).items.push({name,price,qty,amt:qty*price,store});
+  });
+  return Object.values(g);
+}
 function simpParse(txt,fallbackDate){
   const src=Z2H(txt).replace(/\r\n?/g,'\n');
   const lines=src.split('\n');
@@ -2994,7 +3015,10 @@ function simpParse(txt,fallbackDate){
     const k=(m.items[0]&&m.items[0].store||'?')+'|'+m.date;
     if(!best[k]||(m.at||'')>=(best[k].at||''))best[k]=m;
   });
-  const kept=Object.values(best).sort((a,b)=>a.date.localeCompare(b.date));
+  const kept=Object.values(best);
+  // 単純な並びで書かれた行は、速報の重複まとめの対象外（1行ずつが確定値のため）
+  if(!kept.length)kept.push(...simpTsv(src,fallbackDate));
+  kept.sort((a,b)=>a.date.localeCompare(b.date));
   return {mails:kept, dropped:mails.length-kept.length};
 }
 
