@@ -83,6 +83,14 @@
   .warn b{display:block;color:var(--amber);font-size:.9rem;margin-bottom:3px}
   .warn span{display:block;font-size:.8rem;color:var(--ink-2)}
 
+  /* 試し方の切り替え */
+  .modes{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
+  .modes button{flex:1 1 0;min-width:96px;border:1px solid var(--line);border-radius:9px;
+    background:transparent;color:var(--ink-3);font:inherit;font-size:.78rem;
+    padding:9px 6px;min-height:44px;line-height:1.35}
+  .modes button[aria-pressed="true"]{border-color:var(--green);color:var(--green);font-weight:700}
+  .modes button b{display:block;font-size:.84rem}
+
   /* 動作記録 */
   .diag{border:1px solid var(--line);border-radius:10px;padding:12px;margin:16px 0 0;background:var(--surf)}
   .diag-h{display:flex;align-items:center;gap:10px;margin-bottom:8px}
@@ -138,6 +146,7 @@
 </div>
 
 <button class="mic" id="mic">話して記録する</button>
+<div class="modes" id="modes"></div>
 
 <div class="heard">
   <span class="lb">聞き取った言葉</span>
@@ -159,6 +168,8 @@
 
 <h2>声が出ないときに見るところ</h2>
 <p class="note">
+  0. 上の <b>A〜D</b> を切り替えて、それぞれ一度ずつ試してください。
+     どれかで動けば原因が分かります。<br>
   1. <b>設定 → 一般 → キーボード → 音声入力</b> がオンになっているか。
      ここがオフだと、Safari の音声認識は一切動きません。<br>
   2. <b>設定 → Safari → マイク</b> が「確認」または「許可」になっているか。<br>
@@ -422,6 +433,28 @@ $('manualGo').onclick = () => {
   showResult(parse(t));
 };
 
+/* ===== 試し方 ===== */
+const MODE = { interim: false, cont: false, pre: false };
+const MODES = [
+  ['A', 'そのまま',   { interim:false, cont:false, pre:false }],
+  ['B', '途中経過あり',{ interim:true,  cont:false, pre:false }],
+  ['C', '続けて聞く',  { interim:true,  cont:true,  pre:false }],
+  ['D', '先にマイク',  { interim:false, cont:false, pre:true  }],
+];
+let modeI = 0;
+function renderModes(){
+  $('modes').innerHTML = MODES.map(([k, name], i) =>
+    '<button type="button" data-m="' + i + '" aria-pressed="' + (i === modeI) + '">'
+    + '<b>' + k + '</b>' + name + '</button>').join('');
+}
+$('modes').onclick = e => {
+  const b = e.target.closest('[data-m]');
+  if (!b) return;
+  modeI = +b.dataset.m;
+  Object.assign(MODE, MODES[modeI][2]);
+  renderModes();
+};
+
 /* ===== 動作記録 ===== */
 let t0 = 0;
 const LOG = [];
@@ -469,6 +502,8 @@ async function showEnv(){
     + '">' + String(v).replace(/</g,'&lt;') + '</b></div>').join('');
 }
 showEnv();
+renderModes();
+Object.assign(MODE, MODES[0][2]);
 
 function setWarn(){
   const box = $('warnBox');
@@ -498,28 +533,23 @@ async function startMic(){
   $('log2').innerHTML = '';
   log('ボタンを押した');
 
-  // 先にマイクの許可をはっきり取る（iPhone はこれが要ることがある）
-  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+  // iPhone ではマイクを先に掴むと認識側に音が渡らないので、何もせず始める
+  if (MODE.pre){
     try {
-      log('マイクの許可を求めています…');
+      log('（比較用）先にマイクを掴みます…');
       const st = await navigator.mediaDevices.getUserMedia({ audio: true });
-      log('マイクが使えます', 'g');
       st.getTracks().forEach(tr => tr.stop());
-    } catch(e){
-      log('マイクが使えません: ' + e.name + ' ' + (e.message || ''), 'e');
-      $('heard').textContent = 'マイクの使用が許可されていません。'
-        + 'Safari のアドレスバー左の「ぁA」から、このサイトのマイクを許可してください。';
-      $('heard').className = 'tx dim';
-      showEnv();
-      return;
-    }
+      log('（比較用）掴んで離しました', 'e');
+    } catch(e){ log('（比較用）失敗: ' + e.name, 'e'); }
   }
 
   rec = new SR();
   rec.lang = 'ja-JP';
-  rec.interimResults = true;
-  rec.continuous = false;
+  rec.interimResults = MODE.interim;
+  rec.continuous = MODE.cont;
   rec.maxAlternatives = 1;
+  log('設定: 途中経過=' + MODE.interim + ' / 続けて聞く=' + MODE.cont
+      + ' / 先にマイク=' + MODE.pre);
 
   ['audiostart','soundstart','speechstart','speechend','soundend','audioend','nomatch']
     .forEach(ev => { rec['on' + ev] = () => log('← ' + ev); });
@@ -557,9 +587,16 @@ async function startMic(){
   rec.onend = () => {
     log('← end（聞き取り終了）');
     if (!LOG.some(l => l.includes('result'))){
-      log('※ 一度も result が来ていません。設定 → 一般 → キーボード → 音声入力 を確認してください', 'e');
-      $('heard').textContent = '声を文字にできませんでした。'
-        + '設定 → 一般 → キーボード → 音声入力 がオフになっていないか確かめてください。';
+      const gotSound = LOG.some(l => l.includes('soundstart') || l.includes('speechstart'));
+      if (gotSound){
+        log('※ 音は届いたのに文字になりませんでした', 'e');
+        $('heard').textContent = '音は届いていますが、文字にできませんでした。'
+          + '設定 → 一般 → キーボード → 音声入力 がオンか確かめてください。';
+      } else {
+        log('※ soundstart が一度も来ていません＝マイクの音が認識側に届いていません', 'e');
+        $('heard').textContent = 'マイクの音が認識側に届いていません。'
+          + '上の A〜D を切り替えて、もう一度試してみてください。';
+      }
       $('heard').className = 'tx dim';
     }
     listening = false; resetMic(); showEnv();
