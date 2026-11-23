@@ -83,6 +83,26 @@
   .warn b{display:block;color:var(--amber);font-size:.9rem;margin-bottom:3px}
   .warn span{display:block;font-size:.8rem;color:var(--ink-2)}
 
+  /* 動作記録 */
+  .diag{border:1px solid var(--line);border-radius:10px;padding:12px;margin:16px 0 0;background:var(--surf)}
+  .diag-h{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .diag-h b{flex:1;font-size:.82rem;letter-spacing:.06em;color:var(--ink-3)}
+  .diag-h button{border:1px solid var(--line);border-radius:7px;background:transparent;
+    color:var(--ink-3);font:inherit;font-size:.78rem;padding:6px 11px;min-height:36px}
+  #env div{font-size:.78rem;color:var(--ink-2);font-variant-numeric:tabular-nums;
+    padding:2px 0;display:flex;gap:8px}
+  #env div span{flex:0 0 118px;color:var(--ink-3)}
+  #env b{font-weight:700}
+  #env b.no{color:var(--red)}
+  #env b.yes{color:var(--green)}
+  .lg{margin-top:9px;border-top:1px solid var(--line2);padding-top:8px;
+    font-size:.76rem;line-height:1.7;color:var(--ink-2);
+    font-variant-numeric:tabular-nums;max-height:240px;overflow:auto}
+  .lg div{white-space:pre-wrap}
+  .lg .e{color:var(--red);font-weight:700}
+  .lg .g{color:var(--green);font-weight:700}
+  .lg .t{color:var(--ink-3)}
+
   /* 例文 */
   .ex{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line2);
     background:none;color:var(--ink);font:inherit;font-size:.93rem;padding:11px 0;min-height:44px}
@@ -111,6 +131,12 @@
 
 <div id="warnBox"></div>
 
+<div class="diag">
+  <div class="diag-h"><b>動作記録</b><button type="button" id="copyLog">コピー</button></div>
+  <div id="env"></div>
+  <div id="log2" class="lg"></div>
+</div>
+
 <button class="mic" id="mic">話して記録する</button>
 
 <div class="heard">
@@ -131,6 +157,15 @@
 <h2>この試作で記録したもの</h2>
 <div id="log"><p class="empty">まだありません</p></div>
 
+<h2>声が出ないときに見るところ</h2>
+<p class="note">
+  1. <b>設定 → 一般 → キーボード → 音声入力</b> がオンになっているか。
+     ここがオフだと、Safari の音声認識は一切動きません。<br>
+  2. <b>設定 → Safari → マイク</b> が「確認」または「許可」になっているか。<br>
+  3. アドレスバー左の <b>ぁA</b> →「Webサイトの設定」→ マイク を「許可」に。<br>
+  4. <b>ホーム画面に追加したアプリの中では使えません。</b>Safari で開いてください。<br>
+  5. 音声認識には<b>通信が必要</b>です。圏外では動きません。
+</p>
 <p class="note" style="margin-top:28px">
   これは試作品です。ここで記録したものは、この画面を閉じると消えます。
 </p>
@@ -387,9 +422,53 @@ $('manualGo').onclick = () => {
   showResult(parse(t));
 };
 
-/* ===== 音声認識 ===== */
+/* ===== 動作記録 ===== */
+let t0 = 0;
+const LOG = [];
+function log(msg, cls){
+  const ms = t0 ? (performance.now() - t0) : 0;
+  const line = (t0 ? ('+' + String(Math.round(ms)).padStart(5) + 'ms ') : '          ') + msg;
+  LOG.push(line);
+  const d = document.createElement('div');
+  d.innerHTML = '<span class="t">' + (t0 ? '+' + Math.round(ms) + 'ms' : '･･') + '</span> '
+              + '<span class="' + (cls || '') + '">' + msg.replace(/</g,'&lt;') + '</span>';
+  $('log2').appendChild(d);
+  $('log2').scrollTop = $('log2').scrollHeight;
+}
+$('copyLog').onclick = async () => {
+  const txt = envText() + '\n----\n' + LOG.join('\n');
+  try { await navigator.clipboard.writeText(txt); $('copyLog').textContent = '✓ コピー'; }
+  catch(e){ $('manual').value = txt; $('copyLog').textContent = '下の欄に出しました'; }
+  setTimeout(() => { $('copyLog').textContent = 'コピー'; }, 2500);
+};
+
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false;
+
+/* ===== いまの環境 ===== */
+const ENV = {};
+function envText(){ return Object.entries(ENV).map(([k,v]) => k + ': ' + v).join('\n'); }
+async function showEnv(){
+  ENV['音声認識の機能']   = SR ? (window.SpeechRecognition ? 'あり' : 'あり(webkit)') : 'なし';
+  ENV['ページの種類']     = location.protocol;
+  ENV['ホーム画面から']   = (window.navigator.standalone === true
+                          || matchMedia('(display-mode: standalone)').matches) ? 'はい' : 'いいえ';
+  ENV['マイクの入口']     = (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ? 'あり' : 'なし';
+  ENV['通信']             = navigator.onLine ? 'つながっている' : '圏外';
+  ENV['ブラウザ']         = navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 72);
+  try {
+    if (navigator.permissions && navigator.permissions.query){
+      const st = await navigator.permissions.query({ name: 'microphone' });
+      ENV['マイクの許可'] = st.state;
+    } else ENV['マイクの許可'] = '調べられません';
+  } catch(e){ ENV['マイクの許可'] = '調べられません'; }
+
+  const bad = { '音声認識の機能':'なし', 'マイクの入口':'なし', '通信':'圏外', 'マイクの許可':'denied' };
+  $('env').innerHTML = Object.entries(ENV).map(([k, v]) =>
+    '<div><span>' + k + '</span><b class="' + (bad[k] === v ? 'no' : (v === 'あり' || v === 'granted' ? 'yes' : ''))
+    + '">' + String(v).replace(/</g,'&lt;') + '</b></div>').join('');
+}
+showEnv();
 
 function setWarn(){
   const box = $('warnBox');
@@ -411,16 +490,42 @@ function setWarn(){
 }
 setWarn();
 
-function startMic(){
+async function startMic(){
   if (!SR || $('mic').disabled) return;
-  if (listening){ try { rec.stop(); } catch(e){} return; }
+  if (listening){ log('止めるよう押された'); try { rec.stop(); } catch(e){} return; }
+
+  t0 = performance.now();
+  $('log2').innerHTML = '';
+  log('ボタンを押した');
+
+  // 先にマイクの許可をはっきり取る（iPhone はこれが要ることがある）
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    try {
+      log('マイクの許可を求めています…');
+      const st = await navigator.mediaDevices.getUserMedia({ audio: true });
+      log('マイクが使えます', 'g');
+      st.getTracks().forEach(tr => tr.stop());
+    } catch(e){
+      log('マイクが使えません: ' + e.name + ' ' + (e.message || ''), 'e');
+      $('heard').textContent = 'マイクの使用が許可されていません。'
+        + 'Safari のアドレスバー左の「ぁA」から、このサイトのマイクを許可してください。';
+      $('heard').className = 'tx dim';
+      showEnv();
+      return;
+    }
+  }
+
   rec = new SR();
   rec.lang = 'ja-JP';
   rec.interimResults = true;
   rec.continuous = false;
   rec.maxAlternatives = 1;
 
+  ['audiostart','soundstart','speechstart','speechend','soundend','audioend','nomatch']
+    .forEach(ev => { rec['on' + ev] = () => log('← ' + ev); });
+
   rec.onstart = () => {
+    log('← start（聞き取り開始）', 'g');
     listening = true;
     $('mic').dataset.on = '1';
     $('mic').innerHTML = '<span class="pulse"></span>聞いています（押すと止めます）';
@@ -431,13 +536,14 @@ function startMic(){
   rec.onresult = ev => {
     let txt = '';
     for (let i = 0; i < ev.results.length; i++) txt += ev.results[i][0].transcript;
+    const fin = ev.results[ev.results.length - 1].isFinal;
+    log('← result' + (fin ? '（確定）' : '（途中）') + ' 「' + txt + '」', 'g');
     $('heard').textContent = txt;
     $('heard').className = 'tx';
-    if (ev.results[ev.results.length - 1].isFinal){
-      showResult(parse(txt));
-    }
+    if (fin) showResult(parse(txt));
   };
   rec.onerror = ev => {
+    log('← error: ' + ev.error + (ev.message ? ' / ' + ev.message : ''), 'e');
     listening = false;
     resetMic();
     const msg = ev.error === 'not-allowed' || ev.error === 'service-not-allowed'
@@ -448,10 +554,20 @@ function startMic(){
     $('heard').textContent = msg;
     $('heard').className = 'tx dim';
   };
-  rec.onend = () => { listening = false; resetMic(); };
+  rec.onend = () => {
+    log('← end（聞き取り終了）');
+    if (!LOG.some(l => l.includes('result'))){
+      log('※ 一度も result が来ていません。設定 → 一般 → キーボード → 音声入力 を確認してください', 'e');
+      $('heard').textContent = '声を文字にできませんでした。'
+        + '設定 → 一般 → キーボード → 音声入力 がオフになっていないか確かめてください。';
+      $('heard').className = 'tx dim';
+    }
+    listening = false; resetMic(); showEnv();
+  };
 
-  try { rec.start(); }
-  catch(e){ $('heard').textContent = '始められませんでした: ' + e.message; }
+  try { log('start() を呼びます'); rec.start(); }
+  catch(e){ log('start() が失敗: ' + e.name + ' ' + e.message, 'e');
+            $('heard').textContent = '始められませんでした: ' + e.message; }
 }
 function resetMic(){
   $('mic').dataset.on = '0';
