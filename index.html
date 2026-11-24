@@ -560,12 +560,6 @@
   .rtoff .rtn,.rtoff .rts{color:var(--ink-3)}
   #rtDow{gap:5px;flex-wrap:nowrap}
   .chip.dow{flex:1 1 0;min-width:0;max-width:64px;padding:10px 0;text-align:center}
-  /* 話して入力 */
-  .sayrow{display:flex;gap:8px;align-items:stretch}
-  .sayrow input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;
-    background:var(--surf);color:var(--ink);font:inherit;
-    padding:9px 12px;min-height:46px;-webkit-appearance:none}
-  .sayrow .mini{flex:none;padding:0 16px;min-height:46px;font-size:.9rem}
   body.no-adv .x-adv,body.no-plot .x-plot,.x-hide{display:none !important}
   .zoombar{position:fixed;left:0;right:0;top:0;z-index:80;display:none;align-items:center;gap:10px;
     background:var(--amber);color:#1A1407;padding:9px 12px calc(9px) ;
@@ -793,16 +787,6 @@
     <div class="fld"><span class="lb">日付</span><div class="dwrap"><input type="date" id="sDate">
         <button class="mini today" type="button" data-today="sDate">今日</button>
         <button class="mini today" type="button" data-tomorrow="sDate">明日</button></div></div>
-    <div class="fld" id="fldSay">
-      <span class="lb">話して入力
-        <span class="lbtools"><button class="mini" type="button" id="sayHelp">例</button></span></span>
-      <div class="sayrow">
-        <input type="text" id="sayText" inputmode="text" autocomplete="off"
-          placeholder="キーボードのマイクで話す">
-        <button type="button" class="mini" id="sayGo">反映</button>
-      </div>
-      <p class="note" id="sayNote" style="margin:6px 0 0"></p>
-    </div>
     <div class="fld" id="fldSCrop"><span class="lb">品目</span><div class="chips" id="sCrop"></div></div>
     <div class="fld ctr" id="fldSPrice"><span class="lb">単価（円）</span>
       <div class="step tight"><button type="button" data-t="sPrice" data-d="-10">−</button>
@@ -3489,73 +3473,6 @@ function renderRtYear(){
   }
 }
 
-/* ========== 話して入力（音声入力アプリの文字起こしを読む） ========== */
-// 「ベビーリーフ 単価150 おおさと12 元気くん8 大和15」のような一文から、
-// 品目・単価・店ごとの数を取り出す。音声認識そのものは端末側のアプリが担当する。
-const KANSU={'〇':0,'零':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10};
-function kan2num(t){
-  // 「十五」「二十」程度までを数字に直す
-  return String(t).replace(/[〇零一二三四五六七八九十]+/g,m=>{
-    if(!/十/.test(m))return m.split('').map(c=>KANSU[c]).join('');
-    const [a,b]=m.split('十');
-    const hi=a?KANSU[a]:1, lo=b?KANSU[b[0]]:0;
-    return String(hi*10+lo);
-  });
-}
-function sayNorm(t){
-  return kan2num(Z2H(t)).replace(/[、。．，・]/g,' ').replace(/\s+/g,' ').trim();
-}
-// 店ごとの聞き取り用のキーワードを作る。2つ以上の店で重なるものは使わない
-function storeKeys(){
-  const drop=/道の駅|おてんとさん|市場|ファーマーズ|直売所|^JA|店$|館$|\s/g;
-  const map={};
-  D.stores.forEach(st=>{
-    const keys=new Set([st, st.replace(/\s/g,'')]);
-    const core=st.replace(drop,'').trim();
-    if(core.length>=2){
-      keys.add(core);
-      // 「元気くん市場仙台南店」を「元気くん」や「仙台南」でも呼べるように、
-      // 頭からと後ろからの切り出しも候補に入れる
-      for(let n=2;n<core.length;n++){keys.add(core.slice(0,n));keys.add(core.slice(-n))}
-    }
-    st.split(/[\s　]+/).forEach(w=>{if(w.length>=2)keys.add(w)});
-    if(D.alias)Object.keys(D.alias).forEach(k=>{if(D.alias[k]===st)keys.add(k)});
-    keys.forEach(k=>{if(k&&k.length>=2)(map[k]??=new Set()).add(st)});
-  });
-  // 1つの店にしか当たらないキーワードだけ残す。長いものを先に見る
-  return Object.keys(map).filter(k=>map[k].size===1)
-    .sort((a,b)=>b.length-a.length)
-    .map(k=>({key:k, store:[...map[k]][0]}));
-}
-function sayParse(text){
-  const t=sayNorm(text);
-  if(!t)return null;
-  const out={crop:null, price:null, qty:{}, miss:[]};
-  // 品目：登録名のうち、文中にあるいちばん長いもの
-  const cs=D.crops.filter(c=>c!=='共通'&&t.includes(c)).sort((a,b)=>b.length-a.length);
-  if(cs.length)out.crop=cs[0];
-  // 単価
-  let m=t.match(/単価\s*([\d]+)/)||t.match(/([\d]+)\s*円/);
-  if(m)out.price=+m[1];
-  // 店ごとの数
-  let rest=t;
-  if(out.crop)rest=rest.split(out.crop).join(' ');
-  if(m)rest=rest.replace(m[0],' ');
-  storeKeys().forEach(({key,store})=>{
-    if(out.qty[store]!=null)return;
-    const i=rest.indexOf(key);
-    if(i<0)return;
-    const after=rest.slice(i+key.length);
-    const nm=after.match(/^[^\d]{0,6}?([\d]+)/);
-    if(nm){
-      out.qty[store]=+nm[1];
-      // 使った部分を消して、同じ数字を別の店に使わないようにする
-      rest=rest.slice(0,i)+' '.repeat(key.length+nm.index+nm[0].length)+after.slice(nm.index+nm[0].length);
-    } else out.miss.push(store);
-  });
-  return out;
-}
-
 /* ========== 出荷：店舗ごとにまとめて入力 ========== */
 let shipQty={}, shipPrice={}, shipCrop=null;
 // 画面が落ちても入力が消えないよう、下書きを別に保存しておく
@@ -5053,40 +4970,6 @@ $('rtOk').onclick=()=>{
   save();closeRtSheet();renderRt();renderPlan();buzz(25);
   toast(crop+'の'+task+'を'+(i>=0?'直しました':'登録しました'));
 };
-$('sayGo').onclick=()=>{
-  const raw=$('sayText').value.trim();
-  const note=$('sayNote');
-  if(!raw){note.textContent='キーボードのマイクを押して、品目と店ごとの数を話してください。';return}
-  const r=sayParse(raw);
-  if(!r||(!r.crop&&!Object.keys(r.qty).length)){
-    note.innerHTML='<b style="color:var(--red)">聞き取れませんでした。</b>「例」を押すと言い方が出ます。';
-    buzz([50,60,50]);return;
-  }
-  const said=[];
-  if(r.crop){sel.crop=r.crop;renderForms();said.push(r.crop)}
-  if(r.price>0){$('sPrice').value=r.price;said.push('単価'+r.price+'円')}
-  const names=Object.keys(r.qty);
-  names.forEach(st=>setShipQty(st,r.qty[st]));
-  renderShipRows();
-  const q=names.reduce((a,st)=>a+r.qty[st],0);
-  if(names.length)said.push(names.length+'店 '+q+'点');
-  note.innerHTML='聞き取り：<b>'+esc(said.join(' ・ '))+'</b>'
-    +(names.length?'<br>'+names.map(st=>esc(st)+' '+r.qty[st]).join(' ・ '):'')
-    +(r.crop?'':'<br><b style="color:var(--amber)">品目が聞き取れていません。下から選んでください。</b>');
-  $('sayText').value='';
-  buzz(25);
-};
-$('sayHelp').onclick=()=>{
-  const ex=(D.crops[0]||'ベビーリーフ')+' 単価150 '
-    +D.stores.slice(0,3).map((st,i)=>{
-      const core=st.replace(/道の駅|おてんとさん|市場|店$|館$|\s/g,'')||st;
-      return core+' '+[12,8,15][i];
-    }).join(' ');
-  $('sayText').value=ex;
-  $('sayNote').innerHTML='この調子で話してください。店の名前は短くて大丈夫です。'
-    +'「反映」を押すと下に入ります。';
-};
-$('sayText').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('sayGo').click()}});
 $('sSame').onclick=()=>{
   if(!sel.crop){toast('先に品目を選んでください');return}
   if(!fillFromLast(sel.crop))toast('この品目は前に出した記録がありません');
