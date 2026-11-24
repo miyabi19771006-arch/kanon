@@ -638,7 +638,10 @@
 
   .toast{position:fixed;left:14px;right:14px;bottom:calc(86px + env(safe-area-inset-bottom));
     width:max-content;max-width:calc(100% - 28px);margin:0 auto;
-    background:var(--inv-bg);color:var(--inv-fg);padding:11px 20px;border-radius:22px;font-size:.9rem;opacity:0;pointer-events:none;transition:opacity .18s;z-index:70;font-weight:600}
+    background:var(--inv-bg);color:var(--inv-fg);padding:11px 20px;border-radius:22px;font-size:.9rem;
+    opacity:0;pointer-events:none;transition:opacity .18s,bottom .18s;z-index:70;font-weight:600}
+  /* 画面下に固定の保存ボタンがあるときは、その上に逃がす（取り消すの誤タップ防止）*/
+  .toast.high{bottom:calc(154px + env(safe-area-inset-bottom))}
   .toast.on{opacity:1}
   .toast>span{min-width:0;overflow-wrap:break-word;word-break:normal;line-break:strict}
   .toast.act{display:flex;align-items:center;gap:12px;padding:10px 10px 10px 18px}
@@ -1635,6 +1638,14 @@ function refreshAll(){
   setTimeout(fitFigs,0);
   if($('calWrap')&&$('calWrap').style.display!=='none')renderCal();
 }
+// 取り消しの手は、その画面にいるあいだだけ。移ったら持ち越さない
+function dropUndo(){
+  const t=$('toast');
+  if(t&&t.classList.contains('act')&&t.classList.contains('on')){
+    t.classList.remove('on');clearTimeout(tT);
+  }
+  lastAdd=[];lastUndo=null;
+}
 function toast(m,undoable,ms){
   if(saveFailed&&!/できません|失敗/.test(m))return;
   const t=$('toast');
@@ -1646,6 +1657,11 @@ function toast(m,undoable,ms){
     b.onclick=()=>{undoLast();t.classList.remove('on')};
     t.appendChild(b);
   }
+  // 下に固定の保存ボタンが出ているときは、その上に出す
+  // position:fixed の要素は offsetParent が null になるので、実際の矩形で判定する
+  const stick=[...document.querySelectorAll('.save.stick')]
+    .some(el=>el.getClientRects().length>0&&el.getBoundingClientRect().height>0);
+  t.classList.toggle('high',stick);
   t.classList.add('on');t.classList.toggle('act',!!undoable);
   clearTimeout(tT);tT=setTimeout(()=>t.classList.remove('on'),ms||(undoable?3000:1600));
 }
@@ -5074,6 +5090,7 @@ const MODES=['m-work','m-ship','m-rec','m-dir','m-exp'], FORMS=['f-work','f-ship
 function mode(id){const b=$(id);if(b)b.click()}
 MODES.forEach((id,i)=>{
   $(id).onclick=()=>{
+    dropUndo();
     D.lastMode=id;save();
     MODES.forEach((x,j)=>$(x).setAttribute('aria-pressed',String(i===j)));
     FORMS.forEach((x,j)=>$(x).style.display=(i===j?'block':'none'));
@@ -5139,6 +5156,7 @@ let recOpened=false;
 const scrollMem={};
 let curPid='p-plan';
 function goto(pid){
+  dropUndo();
   const cur=document.querySelector('.panel.on');
   if(cur)scrollMem[cur.id]=window.scrollY;
   document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.p===pid)));
