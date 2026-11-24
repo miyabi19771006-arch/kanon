@@ -3090,8 +3090,9 @@ function simpCropName(raw){
 // 登録してある品目に当てる。覚えた読み替えも使う
 function simpCrop(raw){
   const n=simpCropName(raw);
-  if(D.crops.includes(n))return n;
+  // 読み替えを先に見る。両方あるときに記録が二つに分かれないように
   if(D.calias&&D.calias[n]&&D.crops.includes(D.calias[n]))return D.calias[n];
+  if(D.crops.includes(n))return n;
   const bare=n.replace(/[【（(].*$/,'').trim();          // 枝豆【秘伝】→枝豆
   if(bare&&D.crops.includes(bare))return bare;
   return null;
@@ -3649,11 +3650,20 @@ document.addEventListener('change',e=>{
   if(sc&&sc.value){
     const raw=sc.dataset.simpc;
     if(sc.value==='__new'){
+      // 品目として登録するなら、読み替えは外す（両方あると読み替えが効かなくなる）
+      if(D.calias&&D.calias[raw])delete D.calias[raw];
       if(!D.crops.includes(raw)){const i=D.crops.indexOf('共通');
         if(i>=0)D.crops.splice(i,0,raw); else D.crops.push(raw)}
       save();renderForms();renderSettings();toast('「'+raw+'」を品目に追加しました');
     } else {
-      D.calias??={};D.calias[raw]=sc.value;save();toast('この品目として覚えました');
+      // 読み替えるなら、同名の品目が登録されていたら外す（記録が二つに分かれるため）
+      D.calias??={};D.calias[raw]=sc.value;
+      if(D.crops.includes(raw)&&raw!==sc.value){
+        const used=['ship','moves','work','spray','fert','harv']
+          .some(k=>(D[k]||[]).some(x=>x.crop===raw));
+        if(!used){D.crops=D.crops.filter(c=>c!==raw);renderForms();renderSettings()}
+      }
+      save();toast('「'+raw+'」は'+sc.value+'として覚えました');
     }
     simpRedo();return;
   }
