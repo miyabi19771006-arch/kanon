@@ -1009,6 +1009,13 @@
       月に一度、スマホのファイルアプリやクラウドに保存しておいてください。</p>
     <div style="margin-top:14px"><button class="mini warn" id="wipe">すべて消去</button></div>
   </div>
+
+  <div class="card">
+    <h2>このkanon</h2>
+    <p class="note" id="verNow" style="margin-top:0"></p>
+    <button class="save alt" id="verChk">新しいkanonがないか確認</button>
+    <p class="note" id="verNote" style="margin-bottom:0"></p>
+  </div>
 </section>
 
 </main>
@@ -4200,8 +4207,27 @@ function migrate(){
 }
 
 // 圏外でも開けるように本体を端末に預ける。記録は預けない（端末の中にだけある）
+/* 新しいkanonが出ていないか見にいく。
+   iPhone のホーム画面アプリは閉じて開いても前の状態に戻るだけで、
+   自分からは確認しにいかない。だからこちらから update() を呼ぶ。 */
+let swReg=null, lastChk=0, chkWant=false;
+function swCheck(manual){
+  if(manual)chkWant=true;
+  if(!swReg){if(manual)verSay('この端末では確認できません（ブラウザで開いています）');return}
+  const now=Date.now();
+  if(!manual&&now-lastChk<60000)return;   // 自動のぶんは1分に1回まで
+  lastChk=now;
+  if(manual)verSay('確認しています…');
+  swReg.update().then(()=>{
+    if(swReg.waiting||swReg.installing){showUpdate();if(manual)verSay('新しいkanonがあります。上の帯から開き直してください。')}
+    else if(manual)verSay('いまのkanonが最新です。');
+  }).catch(()=>{if(manual)verSay('確認できませんでした。電波の入るところでもう一度お試しください。')});
+}
+function verSay(t){const el=$('verNote');if(el)el.textContent=t}
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
   navigator.serviceWorker.register('./sw.js').then(reg=>{
+    swReg=reg;
+    if(reg.waiting&&navigator.serviceWorker.controller)showUpdate();   // すでに次のぶんが控えている
     reg.addEventListener('updatefound',()=>{
       const w=reg.installing;
       if(!w)return;
@@ -4210,7 +4236,12 @@ if('serviceWorker' in navigator && location.protocol.startsWith('http')){
         if(w.state==='installed'&&navigator.serviceWorker.controller)showUpdate();
       });
     });
+    swCheck();                                   // 開いたとき
+    setInterval(()=>swCheck(),30*60*1000);       // 開きっぱなしでも30分ごと
   }).catch(()=>{});
+  // ホーム画面アプリは「戻ってきたとき」が実質の起動。ここで必ず見にいく
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)swCheck()});
+  window.addEventListener('focus',()=>swCheck());
 }
 // シートが新しく開いたら、前のトーストは引っ込める
 // （「取り消す」がダイアログの上に浮いて、押し間違えるのを防ぐ）
@@ -5182,7 +5213,7 @@ function goto(pid){
     const want=D.lastMode&&MODES.includes(D.lastMode)?D.lastMode:'m-work';
     if(want!=='m-work')mode(want);
   }
-  if(pid==='p-list'){renderList();if($('calWrap').style.display!=='none')renderCal()} if(pid==='p-sum')renderSum(); if(pid==='p-set')renderSettings();
+  if(pid==='p-list'){renderList();if($('calWrap').style.display!=='none')renderCal()} if(pid==='p-sum')renderSum(); if(pid==='p-set'){renderSettings();showVer();swCheck()}
   curPid=pid;
   window.scrollTo(0,scrollMem[pid]||0);
 }
@@ -5333,6 +5364,19 @@ function renderBkInfo(){
 $('expSpray').onclick=()=>csv(D.spray.map(r=>[r.date,r.crop,r.chem,r.dil,r.target,
     r.tank||'',r.dose||'',r.unit||'',r.gid?D.spray.filter(x=>x.gid===r.gid).length:1]),
   ['日付','品目','薬剤名','希釈倍率','対象','水量(L)','薬量','単位','同時散布の剤数'],'防除日誌.csv');
+/* いま動いている版を出す。保存庫の名前がそのまま版の名前になっている */
+async function showVer(){
+  const el=$('verNow');if(!el)return;
+  if(!('caches' in window)||!location.protocol.startsWith('http')){
+    el.textContent='ブラウザで直接開いています（更新の確認はできません）';return;
+  }
+  try{
+    const ks=await caches.keys();
+    const v=ks.find(k=>k.startsWith('kanon-'));
+    el.textContent=v?('いま入っているのは '+v.replace('kanon-','')+' の版です。'):'まだ保存されていません。';
+  }catch(e){el.textContent=''}
+}
+$('verChk').onclick=()=>{swCheck(true);showVer()};
 $('wipe').onclick=async()=>{
   if(!await ask('すべて消去しますか','記録・作型・繰り返しが全部消えます。元に戻せません。','すべて消す',true))return;
   D=JSON.parse(JSON.stringify(DEF));
