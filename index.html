@@ -1635,8 +1635,17 @@ function renderEverything(){
 }
 function refreshAll(){
   renderHead();renderList();renderSum();renderPlan();renderRecover();renderQuick();renderTodayShip();renderTodayDir();
+  refreshShipForm();
   setTimeout(fitFigs,0);
   if($('calWrap')&&$('calWrap').style.display!=='none')renderCal();
+}
+// 出荷画面の「済」表示と案内だけを作り直す。入力中の数量には触らない
+function refreshShipForm(){
+  if(!$('sRows'))return;
+  const act=document.activeElement;
+  if(act&&act.closest&&act.closest('#sRows'))return;   // 入力中なら触らない
+  renderShipRows();
+  if(!shipHint()){const h=$('sHint');if(h&&/記録済み/.test(h.textContent))h.textContent=''}
 }
 // 取り消しの手は、その画面にいるあいだだけ。移ったら持ち越さない
 function dropUndo(){
@@ -2778,7 +2787,8 @@ function renderRecover(){
       if(back>0)take(back,'back');
     });
     markAdd(added);
-    save();renderHead();renderList();renderSum();renderRecover();buzz(25);
+    save();renderHead();renderList();renderSum();renderRecover();
+    renderTodayShip();renderTodayDir();refreshShipForm();renderQuick();buzz(25);
     toast(amt?('売上 '+yen(amt)+'円 を記録'):'記録しました',true);
   });
 }
@@ -3511,14 +3521,7 @@ function fillFromLast(crop,quiet){
   shipQty={};shipPrice={};
   const hint=$('sHint');
   const dt0=$('sDate')&&$('sDate').value||today();
-  const sameDay=D.ship.filter(r=>r.crop===crop&&r.date===dt0);
-  if(sameDay.length&&hint){
-    const q0=sameDay.reduce((a,x)=>a+x.qty,0);
-    const done=[...new Set(sameDay.map(x=>x.store))];
-    hint.innerHTML='<b style="color:var(--green)">'+md(dt0)+'は '+done.length+'店・'+q0+'点 を記録済み</b>'
-      +'<br>まだの店の数を入れてください。済んだ店に足すこともできます。';
-    renderShipRows();return false;
-  }
+  if(shipHint()){renderShipRows();return false}
   const day=lastShipDay(crop,dt0);
   if(!day){
     if(hint)hint.textContent=D.lastPrice[crop]?('前回の単価 '+D.lastPrice[crop]+'円を入れました。'):'';
@@ -3538,6 +3541,20 @@ function fillFromLast(crop,quiet){
   if(hint)hint.textContent='前回（'+md(day)+'）と同じ '+Object.keys(shipQty).length+'店・'+q+'点 を入れました。違う分だけ直してください。';
   renderShipRows();
   if(!quiet)buzz(15);
+  return true;
+}
+// その日その品目がどこまで済んでいるかの案内。記録が変わるたびに出し直す
+function shipHint(){
+  const hint=$('sHint');if(!hint)return false;
+  const crop=sel.crop;
+  const dt0=$('sDate')&&$('sDate').value||today();
+  if(!crop){hint.textContent='';return false}
+  const sameDay=(D.ship||[]).filter(r=>r.crop===crop&&r.date===dt0);
+  if(!sameDay.length)return false;
+  const q0=sameDay.reduce((a,x)=>a+x.qty,0);
+  const done=[...new Set(sameDay.map(x=>x.store))];
+  hint.innerHTML='<b style="color:var(--green)">'+md(dt0)+'は '+done.length+'店・'+q0+'点 を記録済み</b>'
+    +'<br>まだの店の数を入れてください。済んだ店に足すこともできます。';
   return true;
 }
 function renderShipRows(){
@@ -3869,8 +3886,8 @@ async function saveEdit(){
       return;
     }
   }
-  save();closeEdit();renderHead();renderList();renderSum();renderForms();renderRecover();
-  renderAudit();
+  save();closeEdit();renderHead();renderList();renderSum();renderRecover();
+  renderAudit();renderTodayShip();renderTodayDir();refreshShipForm();renderQuick();
   if($('calWrap')&&$('calWrap').style.display!=='none')renderCal();
   toast('直しました');
 }
@@ -3892,6 +3909,7 @@ async function delEdit(){
     }
   }
   save();closeEdit();renderHead();renderList();renderSum();renderRecover();renderAudit();
+  renderTodayShip();renderTodayDir();refreshShipForm();renderQuick();
   if($('calWrap')&&$('calWrap').style.display!=='none')renderCal();
   toast('削除しました');
 }
