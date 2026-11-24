@@ -3299,9 +3299,11 @@ function impPrompt(){
     +'・日付が和暦のときは西暦に直してください。\n'
     +'・品物が何か分からず科目を決められないときは、科目に 不明 と書いてください。'
     +'あてずっぽうで 雑費 にしないでください。\n\n'
+    +'・いちばん最後の行に「合計」と、全部の金額を足した数字を書いてください。\n\n'
     +'例（1枚の伝票に2品あった場合）\n'
     +'2026-11-19\t諸材料費\tカインズ古川店 ウォールライトWL100\t698\n'
-    +'2026-11-19\t種苗費\tカインズ古川店 シャオパオ 348円×3\t1044';
+    +'2026-11-19\t種苗費\tカインズ古川店 シャオパオ 348円×3\t1044\n'
+    +'合計\t1742';
 }
 let impRows=[];
 // 貼り付けた文字から、日付・科目・支払先・金額を拾う
@@ -3309,16 +3311,29 @@ let impRows=[];
    日付らしい並びが行の途中に出てきたら、そこが次の記録の始まりとみなして改行を入れ直す。 */
 function impSplit(txt){
   let t=String(txt||'').replace(/\r\n?/g,'\n');
+  t=impPipe(t);
   if(/\n/.test(t)){
     // 改行が残っているなら、その行の中だけを見る（正しく貼れている場合は何も変わらない）
     return t.split('\n').map(ln=>impBreak(ln)).join('\n');
   }
   return impBreak(t);
 }
+/* マークダウンの表（| で区切った形）も読む。
+   | は伝票に出てこないので区切りとして強い。改行が消えても列の切れ目が残る。 */
+function impPipe(t){
+  if(!/\|/.test(t))return t;
+  return t.split('\n').map(ln=>{
+    if(!/\|/.test(ln))return ln;
+    return ln.replace(/^[ \t　]*\|/,'').replace(/\|[ \t　]*$/,'')
+      .split('|').map(x=>x.trim())
+      .filter(x=>x!==''&&!/^[-ー—:：]+$/.test(x))   // |---|---| の区切り行は捨てる
+      .join('\t');
+  }).filter(x=>x.trim()!=='').join('\n');
+}
 function impBreak(line){
-  // 行頭以外にある「2026-11-19」「2026/11/19」「11/19」の前で切る
+  // 行頭以外にある「2026-11-19」「2026/11/19」「11/19」と、最後の「合計 2742」の前で切る
   return line.replace(
-    /(?<=\S[ \t\u3000]+)(?=(?:\d{4}[-\/.年]\d{1,2}[-\/.月]\d{1,2}日?|\d{1,2}[-\/.月]\d{1,2}日?)(?:[ \t\u3000]|$))/g,
+    /(?<=\S[ \t\u3000]+)(?=(?:(?:\d{4}[-\/.年]\d{1,2}[-\/.月]\d{1,2}日?|\d{1,2}[-\/.月]\d{1,2}日?)(?:[ \t\u3000]|$)|(?:合計|総計)[ \t\u3000:：]*[¥￥]?\d))/g,
     '\n');
 }
 function impParse(txt){
@@ -3328,6 +3343,9 @@ function impParse(txt){
     if(!raw)return;
     // 見出し行は飛ばす。\b は日本語の前後で効かないので、区切り文字で見る
     if(/^(日付|date)([\t,，　 ]|$)/i.test(raw))return;
+    // 「合計 2742」は記録ではなく、読み取りが合っているかの確かめに使う
+    const mt=raw.match(/^(?:合計|総計|計|total)[ \t　:：]*[¥￥]?([0-9,，]+)[ \t　]*円?[ \t　]*$/i);
+    if(mt){out.total=+String(mt[1]).replace(/[,，]/g,'');return}
     // 1,234 のような桁区切りのカンマは、区切り文字と間違えないよう先に外す
     let t2=raw;
     for(let k=0;k<3;k++)t2=t2.replace(/(\d)[,，](\d{3})(?!\d)/g,'$1$2');
@@ -3387,10 +3405,17 @@ function renderImpPrev(){
     $('impOk').style.display='none';return;
   }
   const good=impRows.filter(r=>!r.bad.length);
-  let h='<p class="tot num" style="margin:14px 0 4px">'+good.length+'件 ・ '
-    +yen(good.reduce((a,r)=>a+r.amt,0))+'円'
+  const sum=good.reduce((a,r)=>a+r.amt,0);
+  let h='<p class="tot num" style="margin:14px 0 4px">'+good.length+'件 ・ '+yen(sum)+'円'
     +(impRows.length>good.length?'　<span style="color:var(--red)">読めない行 '+(impRows.length-good.length)+'</span>':'')
     +'</p>';
+  // 書いてあった合計と足し算が合わないときは、読み落としを疑う
+  if(impRows.total!=null&&impRows.total!==sum){
+    h+='<p class="note" style="color:var(--red);font-weight:700;margin:0 0 8px">'
+      +'合計が合いません。書いてあった合計は'+yen(impRows.total)+'円ですが、'
+      +'読み取れたのは'+yen(sum)+'円です。'+(impRows.total>sum?'読み落としがあります。':'多く読んでいます。')
+      +'</p>';
+  }
   impRows.forEach((r,i)=>{
     const dup=!r.bad.length&&impDup(r);
     h+='<div class="improw'+(r.bad.length?' ng':'')+'">'
