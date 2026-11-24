@@ -566,6 +566,7 @@
     background:var(--surf);color:var(--ink);font:inherit;
     padding:9px 12px;min-height:46px;-webkit-appearance:none}
   .sayrow .mini{flex:none;padding:0 16px;min-height:46px;font-size:.9rem}
+  body.no-adv .x-adv,body.no-plot .x-plot,.x-hide{display:none !important}
   /* iOS は16pxより小さい入力欄をタップすると画面を拡大するので、下限を決めておく */
   input,select,textarea{font-size:16px;scroll-margin:96px 0 140px}
   input[type=date],input[type=number],input[type=text]{font-size:16px}
@@ -720,7 +721,7 @@
 <!-- ============ 記録 ============ -->
 <section class="panel" id="p-rec">
   <div class="modes">
-    <button id="m-work" aria-pressed="true">作業</button>
+    <button id="m-work" aria-pressed="true" class="x-adv">作業</button>
     <button id="m-ship" aria-pressed="false">出荷</button>
     <button id="m-rec" aria-pressed="false">販売</button>
     <button id="m-dir" aria-pressed="false">直販</button>
@@ -952,15 +953,29 @@
     <p class="note">出荷した数より多く売れている組み合わせを探します。
       確定申告の前に一度見ておくと安心です。</p>
   </div>
-  <h2>毎日の作業</h2>
-  <div class="card">
+  <h2 class="x-plot">毎日の作業</h2>
+  <div class="card x-plot">
     <div id="rtList"></div>
     <button class="save alt" id="rtAdd" style="margin-top:11px">追加する</button>
     <p class="note">ベビーリーフの収穫のように、決まった曜日にくり返す作業を登録します。
       予定タブの「今日」にだけ出ます。先の日付には出さないので、やることが埋もれません。</p>
   </div>
-  <h2>作業の種類（並べ替え）</h2>
-  <div class="card"><div id="taskTags"></div><input type="text" id="taskNew" placeholder="作業を追加して Enter"></div>
+  <h2 class="x-adv">作業の種類（並べ替え）</h2>
+  <div class="card x-adv"><div id="taskTags"></div><input type="text" id="taskNew" placeholder="作業を追加して Enter"></div>
+  <h2>使う機能</h2>
+  <div class="card">
+    <div class="fee-row" style="margin-top:4px">
+      <span>作業・収穫・防除も記録する</span>
+      <button class="mini" id="advTog" type="button">オフ</button>
+    </div>
+    <div class="fee-row">
+      <span>作型と予定を使う</span>
+      <button class="mini" id="plotTog" type="button">オフ</button>
+    </div>
+    <p class="note">オフにすると、お金まわり（出荷・販売・直販・経費）だけの画面になります。
+      記録はどちらでも残るので、あとからオンに戻せば元どおり出てきます。</p>
+  </div>
+
   <h2>画面</h2>
   <div class="card">
     <div class="fee-row" style="margin-top:10px">
@@ -983,11 +998,11 @@
     <button class="mini" id="expShip">出荷CSV</button>
     <button class="mini" id="expMoves">販売・回収CSV</button>
     <button class="mini" id="expExp">経費CSV</button>
-    <button class="mini" id="expFert">液肥CSV</button>
-    <button class="mini" id="expHarv">収穫CSV</button>
+    <button class="mini x-adv" id="expFert">液肥CSV</button>
+    <button class="mini x-adv" id="expHarv">収穫CSV</button>
     <button class="mini" id="expTax">確定申告用の集計</button>
-    <button class="mini" id="expWork">作業CSV</button>
-    <button class="mini" id="expSpray">防除日誌CSV</button>
+    <button class="mini x-adv" id="expWork">作業CSV</button>
+    <button class="mini x-adv" id="expSpray">防除日誌CSV</button>
     <p class="note">エクセルで開けます。品目ごとの書き出しなので、元に戻すことはできません。</p>
   </div>
 
@@ -1007,9 +1022,9 @@
 </main>
 
 <nav>
-  <button data-p="p-plan" aria-pressed="true"><b>予定</b><span id="navBadge"></span>やること</button>
+  <button data-p="p-plan" aria-pressed="true" class="x-plot"><b>予定</b><span id="navBadge"></span>やること</button>
   <button data-p="p-rec" aria-pressed="false"><b>記録</b>入力</button>
-  <button data-p="p-plot" aria-pressed="false"><b>作型</b>進捗</button>
+  <button data-p="p-plot" aria-pressed="false" class="x-plot"><b>作型</b>進捗</button>
   <button data-p="p-list" aria-pressed="false"><b>一覧</b>履歴</button>
   <button data-p="p-sum" aria-pressed="false"><b>集計</b>売上</button>
 </nav>
@@ -1617,6 +1632,7 @@ function hydrate(){
   ['crops','stores','tasks','ship','moves','exp','work','spray','fert','harv','plots']
     .forEach(k=>{ if(!Array.isArray(D[k]))D[k]=JSON.parse(JSON.stringify(DEF[k])) });
   D.fees??={};D.tpl??={};D.lastPrice??={};D.rlog??={};D.alias??={};D.calias??={};
+
   if(!Array.isArray(D.routines))D.routines=[];
   D.plots.forEach(p=>{if(!Array.isArray(p.steps))p.steps=[]});
   D.routines.forEach(r=>{if(!Array.isArray(r.dows))r.dows=[]});
@@ -1626,7 +1642,7 @@ function hydrate(){
 // 画面を全部作り直す
 function renderEverything(){
   hydrate();
-  applyTheme();
+  applyTheme();applyFeat();
   renderForms();renderSettings();renderPlots();renderRt();
   renderCats();renderECat();renderEType();
   refreshAll();
@@ -1638,6 +1654,25 @@ function refreshAll(){
   refreshShipForm();
   setTimeout(fitFigs,0);
   if($('calWrap')&&$('calWrap').style.display!=='none')renderCal();
+}
+// 使う機能の切り替え。記録は消さず、画面に出すかどうかだけを変える
+function applyFeat(){
+  document.body.classList.toggle('no-adv',!D.adv);
+  document.body.classList.toggle('no-plot',!D.plotOn);
+  const set=(id,on)=>{const b=$(id);if(!b)return;
+    b.textContent=on?'オン':'オフ';
+    b.setAttribute('aria-pressed',String(!!on));
+    b.style.background=on?'var(--green)':'';
+    b.style.color=on?'var(--paper)':'';
+    b.style.borderColor=on?'var(--green)':'';};
+  set('advTog',D.adv);set('plotTog',D.plotOn);
+  // 隠したタブを開いていたら、記録に移る
+  const cur=document.querySelector('.panel.on');
+  if(cur&&!D.plotOn&&(cur.id==='p-plan'||cur.id==='p-plot'))goto('p-rec');
+  if(!D.adv){
+    const w=$('m-work');
+    if(w&&w.getAttribute('aria-pressed')==='true')mode('m-ship');
+  }
 }
 // 出荷画面の「済」表示と案内だけを作り直す。入力中の数量には触らない
 function refreshShipForm(){
@@ -4015,10 +4050,10 @@ function renderSum(){
 
   <div class="card"><div class="hd-figs sum" style="margin:0;color:var(--ink);align-items:flex-end">
     <div><div class="fig-l" style="color:var(--ink-3)">売上</div><div class="fig-v num">${yen(total)}<span class="y">円</span></div></div>
-    <div><div class="fig-l" style="color:var(--ink-3)">作業</div><div class="fig-v sm num">${(tmin/60).toFixed(1)}<span class="y">時間</span></div></div>
-    <div><div class="fig-l" style="color:var(--ink-3)">時給</div><div class="fig-v sm num" style="color:${tmin&&profit<0?'var(--red)':''}">${tmin?yen(Math.round(profit/(tmin/60))):'—'}<span class="y">円</span></div></div>
+    <div class="x-adv"><div class="fig-l" style="color:var(--ink-3)">作業</div><div class="fig-v sm num">${(tmin/60).toFixed(1)}<span class="y">時間</span></div></div>
+    <div class="x-adv"><div class="fig-l" style="color:var(--ink-3)">時給</div><div class="fig-v sm num" style="color:${tmin&&profit<0?'var(--red)':''}">${tmin?yen(Math.round(profit/(tmin/60))):'—'}<span class="y">円</span></div></div>
   </div><p class="note">売上は「売れた」と記録した分だけを数えています。出荷しただけの分は入りません。</p>
-  <p class="note">時給は<b>差引 ÷ 延べ作業時間</b>です。手数料も資材費も引いたあとの、手取りの時間あたりです。${tmin?'売上だけで割ると '+yen(Math.round(total/(tmin/60)))+'円 になります。':''}</p></div>`;
+  <p class="note x-adv">時給は<b>差引 ÷ 延べ作業時間</b>です。手数料も資材費も引いたあとの、手取りの時間あたりです。${tmin?'売上だけで割ると '+yen(Math.round(total/(tmin/60)))+'円 になります。':''}</p></div>`;
 
   const cr=Object.entries(bc).filter(([k,v])=>v.amt>0||v.min>0||v.ship>0).sort((a,b)=>b[1].amt-a[1].amt);
   if(cr.length){
@@ -4035,38 +4070,42 @@ function renderSum(){
     });
     const anyArea=Object.keys(ar).length>0;
     h+='<table class="t-eff" style="margin-top:14px"><tr><th>品目</th>'
-      +(anyArea?'<th>面積</th><th>10aあたり</th>':'')+'<th>時給</th></tr>';
+      +(D.plotOn&&anyArea?'<th>面積</th><th>10aあたり</th>':'')+(D.adv?'<th>時給</th>':'')+'</tr>';
     cr.forEach(([k,v])=>{
       const net=v.amt-(feeC[k]||0);          // 手数料を引いたあと
       const hr=v.min?Math.round(net/(v.min/60)):null;
       const a=ar[k]||0;
       const per=a?Math.round(net/a*10):null;
       h+=`<tr><td>${esc(k)}</td>`
-        +(anyArea?`<td class="num">${a?Number(a.toFixed(2))+'a':'—'}</td>
+        +(D.plotOn&&anyArea?`<td class="num">${a?Number(a.toFixed(2))+'a':'—'}</td>
         <td class="num hi">${per==null?'—':yen(per)}</td>`:'')
-        +`<td class="num hi" style="color:${hr==null?'var(--ink-3)':(hr<1500?'var(--red)':'var(--green)')}">${hr==null?'—':yen(hr)}</td></tr>`;
+        +(D.adv?`<td class="num hi" style="color:${hr==null?'var(--ink-3)':(hr<1500?'var(--red)':'var(--green)')}">${hr==null?'—':yen(hr)}</td>`:'')
+        +`</tr>`;
     });
     h+='</table>';
-    if(anyArea)h+='<p class="note">10aあたりは、<b>'+rangeLabel()+'にかかっている作型</b>の面積だけで割っています。'
+    if(D.plotOn&&anyArea)h+='<p class="note">10aあたりは、<b>'+rangeLabel()+'にかかっている作型</b>の面積だけで割っています。'
       +(skipped?'この期間にかかっていない作型'+skipped+'件は数えていません。':'')
       +'同じ品目を続けて作った分は足し合わせた作付面積です。</p>';
     const hv={};
     D.harv.filter(r=>inRange(r.date)).forEach(r=>{
       (hv[r.crop]??={got:0,ok:0});hv[r.crop].got+=r.got;hv[r.crop].ok+=r.ok;
     });
-    h+='<table style="margin-top:10px"><tr><th>品目</th><th>出荷</th><th>売れた</th><th>回収</th><th>規格外</th></tr>';
+    h+='<table style="margin-top:10px"><tr><th>品目</th><th>出荷</th><th>売れた</th><th>回収</th>'
+      +(D.adv?'<th>規格外</th>':'')+'</tr>';
     cr.forEach(([k,v])=>{
       const g=hv[k];
       const rt=g&&g.got?Math.round((g.got-g.ok)/g.got*100):null;
       h+=`<tr><td>${esc(k)}</td><td class="num">${v.ship}</td><td class="num">${v.sold}</td>
-      <td class="num" style="color:${v.back?'var(--red)':'var(--ink-3)'}">${v.back}</td>
-      <td class="num hi" style="color:${rt==null?'var(--ink-3)':(rt>=25?'var(--red)':'var(--ink)')}">${rt==null?'—':rt+'%'}</td></tr>`;
+      <td class="num" style="color:${v.back?'var(--red)':'var(--ink-3)'}">${v.back}</td>`
+      +(D.adv?`<td class="num hi" style="color:${rt==null?'var(--ink-3)':(rt>=25?'var(--red)':'var(--ink)')}">${rt==null?'—':rt+'%'}</td>`:'')
+      +`</tr>`;
     });
     h+='</table>';
     if(Object.keys(hv).length)h+='<p class="note">規格外率は「規格外 ÷ 収穫量」。25%を超えると赤で出ます。栽培か収穫のどこかに原因があります。</p>';
-    h+=`<p class="note">品目別の時給と10aあたりは、<b>販売手数料を引いたあと</b>の金額です。資材費などの経費は品目ごとに分けていないので入っていません。全体の手取りは上の「差引」を見てください。</p>`;
-    if(shared)h+=`<p class="note">「共通」の${(shared/60).toFixed(1)}時間は品目別の時給に入っていません。配達をここに入れている場合、実際の時給はこれより低くなります。</p>`;
-    h+='<p class="note">作業時間は「時間 × 人数」の延べ時間です。時給1,500円を下回る品目は、来年の見直し候補です。</p></div>';
+    h+=`<p class="note ${D.adv||D.plotOn?'':'x-hide'}">品目別の時給と10aあたりは、<b>販売手数料を引いたあと</b>の金額です。資材費などの経費は品目ごとに分けていないので入っていません。全体の手取りは上の「差引」を見てください。</p>`;
+    if(shared&&D.adv)h+=`<p class="note">「共通」の${(shared/60).toFixed(1)}時間は品目別の時給に入っていません。配達をここに入れている場合、実際の時給はこれより低くなります。</p>`;
+    if(D.adv)h+='<p class="note">作業時間は「時間 × 人数」の延べ時間です。時給1,500円を下回る品目は、来年の見直し候補です。</p>';
+    h+='</div>';
   }
 
   // 露地とハウスの面積あたり収益
@@ -4082,7 +4121,7 @@ function renderSum(){
   });
   const pls=Object.entries(pl).filter(([k,v])=>v.area>0);
   if(pls.length){
-    h+='<h2>露地とハウス</h2><div class="card"><table><tr><th>場所</th><th>面積</th><th>手取り</th><th>10aあたり</th></tr>';
+    if(D.plotOn)h+='<h2>露地とハウス</h2><div class="card"><table><tr><th>場所</th><th>面積</th><th>手取り</th><th>10aあたり</th></tr>';
     pls.forEach(([k,v])=>{
       const per=Math.round(v.amt/v.area*10);
       const disp=(k==='ハウス')?(Math.round(fromArea(v.area,'ハウス'))+'坪'):(Number(v.area.toFixed(2))+'a');
@@ -4143,6 +4182,7 @@ function renderSum(){
 
 // 古い形式のデータを今の形に直す。起動時とバックアップ読み込みの両方から呼ぶ
 function migrate(){
+  const fresh=!D.seed;   // はじめて入れた端末かどうか（これより先で seed を触る前に見る）
   // 新しく用意した品目を、既存の設定にも足す（一度だけ）
   if(!D.seed||D.seed<2){
     ['トウモロコシ','トウモロコシ 秋どり'].forEach(c=>{
@@ -4181,6 +4221,12 @@ function migrate(){
   });
   // 店舗名に「直販」が紛れていたら外す（棚から減らせなくなるため）
   if(D.stores.includes(DIRECT))D.stores=D.stores.filter(x=>x!==DIRECT);
+  // 新しく入れた人はお金まわりだけ。いま使っている端末は、これまでどおり全部出す
+  if(D.seed<5){
+    if(D.adv===undefined)D.adv=!fresh;
+    if(D.plotOn===undefined)D.plotOn=!fresh;
+    D.seed=5;
+  }
   save();
 }
 
@@ -4917,6 +4963,10 @@ $('impOk').onclick=()=>{
   renderCats();renderQuick();refreshAll();buzz(25);
   toast(good.length+'件 '+yen(good.reduce((a,r)=>a+r.amt,0))+'円を取り込みました',true);
 };
+$('advTog').onclick=()=>{D.adv=!D.adv;save();applyFeat();renderSum();
+  toast(D.adv?'作業・収穫・防除を使います':'お金まわりだけにしました')};
+$('plotTog').onclick=()=>{D.plotOn=!D.plotOn;save();applyFeat();renderSum();
+  toast(D.plotOn?'作型と予定を使います':'作型と予定を隠しました')};
 $('rtAdd').onclick=()=>openRtSheet(null);
 $('rtCancel').onclick=closeRtSheet;
 $('sheetRt').onclick=e=>{if(e.target.id==='sheetRt')closeRtSheet()};
@@ -5389,6 +5439,11 @@ $('wipe').onclick=async()=>{
   ['wTank','shTank'].forEach(i=>{const e=$(i);if(e)e.value=D.tank||100});
   resetMixRows();
   applyTheme();applyAM();renderTodayShip();
+  applyFeat();
+  if(!D.plotOn&&(D.lastOpen2==='p-plan'||true)){
+    const cur=document.querySelector('.panel.on');
+    if(cur&&(cur.id==='p-plan'||cur.id==='p-plot'))goto('p-rec');
+  }
   setTimeout(updDow,0);
 renderCats();renderQuick();renderHead();renderForms();renderPlan();renderPlots();renderSettings();renderRecover();
   // 入力の途中で落ちていたら、続きから入れられるようにする
