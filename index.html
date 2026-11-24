@@ -547,6 +547,7 @@
     border-radius:4px;margin-left:6px;vertical-align:1px}
   .imptag.dup{background:var(--amber-l);color:var(--amber)}
   .imptag.bad{background:var(--red-l);color:var(--red)}
+  .imptag.warn{background:var(--amber-l);color:var(--amber)}
   .improw select{margin-top:4px;padding:5px 7px;min-height:34px}
   /* 毎日の作業 */
   .rtrow{display:flex;align-items:center;gap:10px;padding:11px 0;
@@ -3329,7 +3330,8 @@ function impParse(txt){
     row.note=c.join(' ').trim();
     if(!row.date)row.bad.push('日付');
     if(!(row.amt>0))row.bad.push('金額');
-    if(!row.cat)row.cat='雑費';
+    // 決算書にない科目名を黙って雑費にすり替えない。そうしたことを必ず知らせる
+    if(!row.cat){row.cat='雑費';row.guess=true}
     out.push(row);
   });
   return out;
@@ -3372,7 +3374,8 @@ function renderImpPrev(){
       +'<div class="impL">'
         +'<span class="impd">'+(r.date?md(r.date):'日付なし')
           +(r.bad.length?'<span class="imptag bad">'+r.bad.join('・')+'が読めない</span>':'')
-          +(dup?'<span class="imptag dup">重複かも</span>':'')+'</span>'
+          +(dup?'<span class="imptag dup">重複かも</span>':'')
+          +(r.guess&&!r.bad.length?'<span class="imptag warn">科目は雑費にしました</span>':'')+'</span>'
         +'<span class="impn">'+esc(r.note||'（摘要なし）')+'</span>'
         +'<select data-impcat="'+i+'">'+CATS.map(c=>
             '<option value="'+esc(c)+'"'+(c===r.cat?' selected':'')+'>'+esc(c)+'</option>').join('')
@@ -3380,8 +3383,11 @@ function renderImpPrev(){
       +'</div>'
       +'<b class="impa">'+(r.amt?yen(r.amt)+'円':'—')+'</b></div>';
   });
+  const gs=impRows.filter(r=>r.guess&&!r.bad.length).length;
   h+='<p class="note">金額の桁をもう一度だけ見てください。読めない行は取り込まれません。'
-    +'「重複かも」は、同じ日に同じ金額の記録がすでにある行です。</p>';
+    +'「重複かも」は、同じ日に同じ金額の記録がすでにある行です。'
+    +(gs?'<br><b style="color:var(--amber)">科目が読み取れなかった行が'+gs+'件あります。</b>'
+        +'とりあえず雑費にしてあるので、下の選び直しで直してください。':'')+'</p>';
   box.innerHTML=h;
   $('impOk').style.display=good.length?'block':'none';
   $('impOk').textContent=good.length+'件を取り込む';
@@ -3674,7 +3680,8 @@ document.addEventListener('change',e=>{
     simpRedo();return;
   }
   const ic=e.target.closest('[data-impcat]');
-  if(ic){const r=impRows[+ic.dataset.impcat];if(r)r.cat=ic.value}
+  if(ic){const r=impRows[+ic.dataset.impcat];
+    if(r){r.cat=ic.value;if(r.guess){r.guess=false;renderImpPrev()}}}   // 直したら印を消す
 });
 document.addEventListener('input',e=>{
   const bi=e.target.closest('[data-bsi]');
