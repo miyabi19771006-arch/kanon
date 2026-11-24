@@ -3305,12 +3305,29 @@ function impPrompt(){
 }
 let impRows=[];
 // 貼り付けた文字から、日付・科目・支払先・金額を拾う
+/* コピーの途中で改行が消えてしまうことがある（スマホでAIの返事をコピーしたとき）。
+   日付らしい並びが行の途中に出てきたら、そこが次の記録の始まりとみなして改行を入れ直す。 */
+function impSplit(txt){
+  let t=String(txt||'').replace(/\r\n?/g,'\n');
+  if(/\n/.test(t)){
+    // 改行が残っているなら、その行の中だけを見る（正しく貼れている場合は何も変わらない）
+    return t.split('\n').map(ln=>impBreak(ln)).join('\n');
+  }
+  return impBreak(t);
+}
+function impBreak(line){
+  // 行頭以外にある「2026-11-19」「2026/11/19」「11/19」の前で切る
+  return line.replace(
+    /(?<=\S[ \t\u3000]+)(?=(?:\d{4}[-\/.年]\d{1,2}[-\/.月]\d{1,2}日?|\d{1,2}[-\/.月]\d{1,2}日?)(?:[ \t\u3000]|$))/g,
+    '\n');
+}
 function impParse(txt){
   const out=[];
-  String(txt||'').split(/\r?\n/).forEach(line=>{
+  impSplit(txt).split(/\r?\n/).forEach(line=>{
     const raw=line.trim();
     if(!raw)return;
-    if(/^(日付|date)\b/i.test(raw))return;              // 見出し行は飛ばす
+    // 見出し行は飛ばす。\b は日本語の前後で効かないので、区切り文字で見る
+    if(/^(日付|date)([\t,，　 ]|$)/i.test(raw))return;
     // 1,234 のような桁区切りのカンマは、区切り文字と間違えないよう先に外す
     let t2=raw;
     for(let k=0;k<3;k++)t2=t2.replace(/(\d)[,，](\d{3})(?!\d)/g,'$1$2');
