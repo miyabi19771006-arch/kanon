@@ -567,7 +567,7 @@
     padding:9px 12px;min-height:46px;-webkit-appearance:none}
   .sayrow .mini{flex:none;padding:0 16px;min-height:46px;font-size:.9rem}
   /* iOS は16pxより小さい入力欄をタップすると画面を拡大するので、下限を決めておく */
-  input,select,textarea{font-size:16px}
+  input,select,textarea{font-size:16px;scroll-margin:96px 0 140px}
   input[type=date],input[type=number],input[type=text]{font-size:16px}
   /* 店舗ごとの出荷数 */
   .lbtools{float:right;display:flex;gap:6px;margin-top:-4px}
@@ -2975,7 +2975,7 @@ function simpTsv(src,fallbackDate){
     const store=c[1], name=c.slice(2,c.length-2).join(' ');
     if(!store||!name)return;
     const k=store+'\u0001'+date;
-    (g[k]??={date,at:'',guessed:false,items:[]}).items.push({name,price,qty,amt:qty*price,store});
+    (g[k]??={date,at:'',guessed:false,tsv:true,items:[]}).items.push({name,price,qty,amt:qty*price,store});
   });
   return Object.values(g);
 }
@@ -3085,27 +3085,48 @@ function simpBuild(parsed){
   const rows=[];
   parsed.mails.forEach(m=>{
     m.items.forEach(it=>{
-      rows.push({date:m.date,at:m.at,guessed:m.guessed,
+      rows.push({date:m.date,at:m.at,guessed:m.guessed,tsv:!!m.tsv,
         rawStore:it.store,store:simpStore(it.store),
         rawCrop:simpCropName(it.name),crop:simpCrop(it.name),
-        qty:it.qty,price:it.price,skip:false,why:[]});
+        mailQty:it.qty,qty:it.qty,price:it.price,skip:false,why:[]});
     });
   });
-  const used={};
+  // 速報メールは「その日の累計」なので、すでに記録した分を差し引いて、足りない分だけ入れる
+  const seen={};
   rows.forEach(r=>{
     if(!r.store)r.why.push('店舗が未登録');
     if(!r.rawCrop)r.why.push('品名が読めない');
     else if(!r.crop)r.why.push('品目が未登録');
     if(r.why.length){r.skip=true;return}
+    const key=r.date+'\u0001'+r.store+'\u0001'+r.crop;
+    if(!(key in seen)){
+      seen[key]=r.tsv ? 0 : (D.moves||[])
+        .filter(x=>x.type==='sold'&&x.date===r.date&&x.store===r.store&&x.crop===r.crop)
+        .reduce((a,x)=>a+x.qty,0);
+    }
+    const covered=Math.min(r.mailQty, seen[key]);   // この行のうち、すでに記録済みの分
+    seen[key]-=covered;
+    r.done=covered;
+    r.qty=r.mailQty-covered;
+    if(r.qty<=0){r.skip=true;r.why.push('取り込み済み');return}
+  });
+  // 記録のほうが多いとき（メールより多く売ったことになっている）
+  Object.keys(seen).forEach(k=>{
+    if(seen[k]>0){
+      const [date,store,crop]=k.split('\u0001');
+      const r=rows.find(x=>x.date===date&&x.store===store&&x.crop===crop);
+      if(r)r.over=seen[k];
+    }
+  });
+  // 棚に足りるか
+  const used={};
+  rows.forEach(r=>{
+    if(r.skip)return;
     const k=r.store+'\u0001'+r.crop;
     const st=stockOf(r.store,r.crop,r.date);
     const left=st.q-(used[k]||0);
     if(r.qty>left){r.why.push(left>0?('棚に'+left+'点しかない'):'棚に在庫がない');r.skip=true;return}
     used[k]=(used[k]||0)+r.qty;
-    // 同じ日・同じ店・同じ品目の売上がすでにあれば、取り込み済みとみなす
-    const already=(D.moves||[]).filter(x=>x.type==='sold'&&x.date===r.date&&x.store===r.store&&x.crop===r.crop)
-      .reduce((a,x)=>a+x.qty,0);
-    if(already>0){r.dup=already;r.skip=true;r.why.push('取り込み済み '+already+'点')}
   });
   return rows;
 }
@@ -3142,15 +3163,17 @@ function renderSimpPrev(dropped){
       +'<div class="impL"><span class="impn">'+esc(r.rawCrop)
         +(r.why.length?'<span class="imptag '+(r.dup?'dup':'bad')+'">'+esc(r.why.join('・'))+'</span>':'')
         +'</span>'
-      +'<span class="impd">'+r.qty+'点 × '+r.price+'円</span>'
+      +'<span class="impd">'+(r.done?('メール'+r.mailQty+'点 − 記録済み'+r.done+'点 → '):'')
+        +r.qty+'点 × '+r.price+'円'
+        +(r.over?'　<b style="color:var(--amber)">記録のほうが'+r.over+'点多い</b>':'')+'</span>'
       +(needCrop?'<select data-simpc="'+esc(r.rawCrop)+'"><option value="">どの品目にする？</option>'
           +D.crops.filter(c=>c!=='共通').map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')
           +'<option value="__new">「'+esc(r.rawCrop)+'」を品目に追加</option></select>':'')
       +'</div>'
       +'<b class="impa">'+yen(r.qty*r.price)+'円</b></div>';
   });
-  h+='<p class="note">このメールは「その日の累計」です。同じ日の分をあとからもう一度取り込まないよう、'
-    +'すでに入っている分は取り込み済みとして飛ばします。</p>';
+  h+='<p class="note">このメールは「その日の累計」です。すでに記録している分は差し引いて、'
+    +'足りない分だけを足します。同じメールを二度取り込んでも二重にはなりません。</p>';
   box.innerHTML=h;
   $('simpOk').style.display=good.length?'block':'none';
   $('simpOk').textContent=good.length+'件を取り込む';
@@ -3513,7 +3536,7 @@ function renderShipRows(){
   D.stores.forEach(st=>{
     const q=+shipQty[st]||0, pr=(shipPrice[st]!=null?shipPrice[st]:base);
     const done=doneMap[st];
-    h+=`<div class="bsrow${q>0?' on':''}">
+    h+=`<div class="bsrow${q>0?' on':''}" data-bs="${esc(st)}">
       <div class="bsL">
         <span class="bsnm">${esc(st)}${done?'<span class="bsdone">済 '+done+'点</span>':''}</span>
         <span class="bssub">
@@ -3531,6 +3554,20 @@ function renderShipRows(){
   const f=$('fldSQty');if(f)f.classList.remove('bad');
   updShipTot();
 }
+// 1行ぶんだけ描き直す
+function paintRow(store){
+  const row=document.querySelector('.bsrow[data-bs="'+cssq(store)+'"]');
+  if(!row)return;
+  const base=+$('sPrice').value||0;
+  const q=+shipQty[store]||0, pr=(shipPrice[store]!=null?shipPrice[store]:base);
+  const inp=row.querySelector('[data-bsi]');
+  if(inp&&document.activeElement!==inp)inp.value=q||0;
+  row.classList.toggle('on',q>0);
+  const amt=row.querySelector('.bsamt');if(amt)amt.textContent=q>0?yen(q*pr)+'円':'';
+  const bp=row.querySelector('.bsp');
+  if(bp){bp.textContent='@'+pr+'円';bp.classList.toggle('own',shipPrice[store]!=null)}
+}
+const cssq=v=>String(v).replace(/["\\]/g,'\\$&');
 function updShipTot(){
   const el=$('sTot');if(!el)return;
   const base=+$('sPrice').value||0;
@@ -3592,13 +3629,7 @@ document.addEventListener('change',e=>{
 });
 document.addEventListener('input',e=>{
   const bi=e.target.closest('[data-bsi]');
-  if(bi){setShipQty(bi.dataset.bsi,+bi.value||0);
-    bi.closest('.bsrow').classList.toggle('on',(+bi.value||0)>0);
-    const amt=bi.closest('.bsrow').querySelector('.bsamt');
-    const base=+$('sPrice').value||0, st6=bi.dataset.bsi;
-    const pr=(shipPrice[st6]!=null?shipPrice[st6]:base), q=+bi.value||0;
-    if(amt)amt.textContent=q>0?yen(q*pr)+'円':'';
-    updShipTot();return}
+  if(bi){setShipQty(bi.dataset.bsi,+bi.value||0);paintRow(bi.dataset.bsi);updShipTot();return}
   const f=e.target.closest&&e.target.closest('.fld.bad');
   if(f)f.classList.remove('bad');
 },true);
@@ -4428,7 +4459,7 @@ document.addEventListener('click',async e=>{
   if(bq){
     const st4=bq.dataset.bsq;
     setShipQty(st4,(+shipQty[st4]||0)+(+bq.dataset.d));
-    renderShipRows();return;
+    paintRow(st4);updShipTot();return;    // その行だけ直す（全部作り直すと画面が飛ぶ）
   }
   // 店舗ごとの出荷数：その店だけ単価を変える
   const bp=e.target.closest('[data-bsp]');
@@ -4913,7 +4944,10 @@ $('sSame').onclick=()=>{
 };
 $('sZero').onclick=()=>{shipQty={};shipPrice={};clearDraft();renderShipRows();
   const h=$('sHint');if(h)h.textContent='';buzz(15)};
-$('sPrice').addEventListener('input',()=>renderShipRows());
+$('sPrice').addEventListener('input',()=>{
+  // 入力中に作り直すと画面が飛ぶので、金額の表示だけ書き換える
+  D.stores.forEach(paintRow);updShipTot();
+});
 ['wTank','shTank'].forEach(id=>{
   const el=$(id);if(!el)return;
   const pfx=(id==='shTank')?'sh':'';
