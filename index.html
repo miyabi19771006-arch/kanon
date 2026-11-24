@@ -567,6 +567,12 @@
     padding:9px 12px;min-height:46px;-webkit-appearance:none}
   .sayrow .mini{flex:none;padding:0 16px;min-height:46px;font-size:.9rem}
   body.no-adv .x-adv,body.no-plot .x-plot,.x-hide{display:none !important}
+  .zoombar{position:fixed;left:0;right:0;top:0;z-index:80;display:none;align-items:center;gap:10px;
+    background:var(--amber);color:#1A1407;padding:9px 12px calc(9px) ;
+    padding-top:calc(9px + env(safe-area-inset-top))}
+  .zoombar span{flex:1;font-size:.8rem;line-height:1.45;font-weight:600}
+  .zoombar button{flex:none;border:0;background:rgba(0,0,0,.14);color:#1A1407;border-radius:8px;
+    font:inherit;font-size:1.1rem;line-height:1;padding:8px 12px;min-height:40px}
   /* iOS は16pxより小さい入力欄をタップすると画面を拡大するので、下限を決めておく */
   input,select,textarea{font-size:16px;scroll-margin:96px 0 140px}
   input[type=date],input[type=number],input[type=text]{font-size:16px}
@@ -1655,6 +1661,36 @@ function refreshAll(){
   setTimeout(fitFigs,0);
   if($('calWrap')&&$('calWrap').style.display!=='none')renderCal();
 }
+// iPhone で画面が拡大したままになることがある。ホーム画面アプリだと戻すボタンがないので知らせる
+function watchZoom(){
+  const vv=window.visualViewport;
+  if(!vv)return;
+  let el=null;
+  const check=()=>{
+    const z=vv.scale||1;
+    if(z>1.12){
+      if(!el){
+        el=document.createElement('div');
+        el.id='zoomBar';el.className='zoombar';
+        el.innerHTML='<span>画面が拡大しています（'+Math.round(z*100)+'%）<br>'
+          +'2本指でつまんで縮めると元に戻ります</span>'
+          +'<button type="button" aria-label="閉じる">×</button>';
+        el.querySelector('button').onclick=()=>{el.style.display='none';el.dataset.off='1'};
+        document.body.appendChild(el);
+      }
+      if(el.dataset.off!=='1'){
+        el.querySelector('span').innerHTML='画面が拡大しています（'+Math.round(z*100)+'%）<br>'
+          +'2本指でつまんで縮めると元に戻ります';
+        el.style.display='flex';
+      }
+    } else if(el){ el.style.display='none';delete el.dataset.off; }
+  };
+  vv.addEventListener('resize',check);
+  vv.addEventListener('scroll',check);
+  setTimeout(check,1200);
+}
+watchZoom();
+
 // 使う機能の切り替え。記録は消さず、画面に出すかどうかだけを変える
 function applyFeat(){
   document.body.classList.toggle('no-adv',!D.adv);
@@ -3707,7 +3743,12 @@ document.addEventListener('change',e=>{
 });
 document.addEventListener('input',e=>{
   const bi=e.target.closest('[data-bsi]');
-  if(bi){setShipQty(bi.dataset.bsi,+bi.value||0);paintRow(bi.dataset.bsi);updShipTot();return}
+  if(bi){setShipQty(bi.dataset.bsi,+bi.value||0);paintRow(bi.dataset.bsi);updShipTot();
+    if(Object.keys(shipQty).length){            // 入れたら警告を消す
+      const f=$('fldSQty');if(f)f.classList.remove('bad');
+      const eb=$('errShip');if(eb)eb.classList.remove('on');
+    }
+    return}
   const f=e.target.closest&&e.target.closest('.fld.bad');
   if(f)f.classList.remove('bad');
 },true);
@@ -4549,7 +4590,12 @@ document.addEventListener('click',async e=>{
   if(bq){
     const st4=bq.dataset.bsq;
     setShipQty(st4,(+shipQty[st4]||0)+(+bq.dataset.d));
-    paintRow(st4);updShipTot();return;    // その行だけ直す（全部作り直すと画面が飛ぶ）
+    paintRow(st4);updShipTot();
+    if(Object.keys(shipQty).length){
+      const f=$('fldSQty');if(f)f.classList.remove('bad');
+      const eb=$('errShip');if(eb)eb.classList.remove('on');
+    }
+    return;    // その行だけ直す（全部作り直すと画面が飛ぶ）
   }
   // 店舗ごとの出荷数：その店だけ単価を変える
   const bp=e.target.closest('[data-bsp]');
