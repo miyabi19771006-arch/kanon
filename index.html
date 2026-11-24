@@ -652,7 +652,9 @@
   .toast.on{opacity:1}
   .toast>span{min-width:0;overflow-wrap:break-word;word-break:normal;line-break:strict}
   .toast.act{display:flex;align-items:center;gap:12px;padding:10px 10px 10px 18px}
-  .toast.act .undo{pointer-events:auto;flex:none}
+  .toast.act .undo{flex:none}
+  /* 見えているときだけ押せる。消えたトーストの透明な当たり判定を残さない */
+  .toast.act.on .undo{pointer-events:auto}
   .toast .undo{border:1.5px solid color-mix(in srgb,var(--inv-fg) 45%,transparent);
     background:color-mix(in srgb,var(--inv-fg) 10%,transparent);color:var(--inv-fg);
     border-radius:16px;white-space:nowrap;
@@ -895,12 +897,12 @@
     </div>
     <div id="calBody"></div>
     <div class="callegend">
-      <span><i class="cdot t-work"></i>作業</span>
-      <span><i class="cdot t-spray"></i>防除</span>
-      <span><i class="cdot t-harv"></i>収穫</span>
+      <span class="x-adv"><i class="cdot t-work"></i>作業</span>
+      <span class="x-adv"><i class="cdot t-spray"></i>防除</span>
+      <span class="x-adv"><i class="cdot t-harv"></i>収穫</span>
       <span><i class="cdot t-ship"></i>出荷</span>
       <span><i class="cdot t-sold"></i>販売</span>
-      <span><i class="cdot t-fert"></i>液肥</span>
+      <span class="x-adv"><i class="cdot t-fert"></i>液肥</span>
       <span><i class="cdot t-exp"></i>経費</span>
     </div>
     <div id="calDay"></div>
@@ -911,10 +913,10 @@
     <button data-k="ship" aria-pressed="true">出荷</button>
     <button data-k="moves" aria-pressed="false">販売・回収</button>
     <button data-k="exp" aria-pressed="false">経費</button>
-    <button data-k="fert" aria-pressed="false">液肥</button>
-    <button data-k="harv" aria-pressed="false">収穫</button>
-    <button data-k="work" aria-pressed="false">作業</button>
-    <button data-k="spray" aria-pressed="false">防除</button>
+    <button data-k="fert" aria-pressed="false" class="x-adv">液肥</button>
+    <button data-k="harv" aria-pressed="false" class="x-adv">収穫</button>
+    <button data-k="work" aria-pressed="false" class="x-adv">作業</button>
+    <button data-k="spray" aria-pressed="false" class="x-adv">防除</button>
   </div>
   <div id="lBody"></div>
   </div>
@@ -2375,10 +2377,19 @@ function toggleSpray(){
 /* ================= 一覧 ================= */
 let lKind='ship';
 let lShow=60;
+const ADVKIND=['work','harv','spray','fert'];
 function renderList(){
   const box=$('lBody');
+  if(!D.adv&&ADVKIND.includes(lKind)){     // 隠した種類を開いていたら出荷に戻す
+    lKind='ship';
+    document.querySelectorAll('#lSeg button').forEach(b=>
+      b.setAttribute('aria-pressed',String(b.dataset.k==='ship')));
+  }
   const all=[...D[lKind]].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
-  if(!all.length){box.innerHTML='<p class="empty">まだ記録がありません。</p>';return}
+  const hidden=D.adv?0:ADVKIND.reduce((a,k)=>a+((D[k]||[]).length),0);
+  const note=hidden?'<p class="note" style="margin-top:14px">作業・収穫・防除・液肥の記録が'+hidden
+    +'件ありますが、いまは隠しています。設定の「使う機能」でオンにすると出てきます。</p>':'';
+  if(!all.length){box.innerHTML='<p class="empty">まだ記録がありません。</p>'+note;return}
   const rows=all.slice(0,lShow);
   let h='',day='';
   rows.forEach(r=>{
@@ -2425,7 +2436,7 @@ function renderList(){
     +'さらに表示（残り '+rest+' 件）</button>';
   box.innerHTML=h+(lKind==='fert'
     ?'<p class="note" style="text-align:center;margin-top:14px">液肥は作業の記録から入力します。</p>'
-    :'<p class="note" style="text-align:center;margin-top:14px">記録をタップすると直せます。 全'+all.length+'件</p>');
+    :'<p class="note" style="text-align:center;margin-top:14px">記録をタップすると直せます。 全'+all.length+'件</p>')+note;
   const mb=$('lMore');
   if(mb)mb.onclick=()=>{lShow+=60;renderList()};
 }
@@ -2471,12 +2482,12 @@ function renderTodayShip(){
 /* ================= カレンダー ================= */
 let calYM=null, calSel=null;
 const CKIND=[
-  {k:'work', c:'t-work', l:'作業'},
-  {k:'spray',c:'t-spray',l:'防除'},
-  {k:'harv', c:'t-harv', l:'収穫'},
+  {k:'work', c:'t-work', l:'作業', adv:1},
+  {k:'spray',c:'t-spray',l:'防除', adv:1},
+  {k:'harv', c:'t-harv', l:'収穫', adv:1},
   {k:'ship', c:'t-ship', l:'出荷'},
   {k:'sold', c:'t-sold', l:'販売'},
-  {k:'fert', c:'t-fert', l:'液肥'},
+  {k:'fert', c:'t-fert', l:'液肥', adv:1},
   {k:'exp',  c:'t-exp',  l:'経費'}
 ];
 // その日に何があったかを種類ごとに集める
@@ -2506,7 +2517,7 @@ function renderCal(){
     const iso=y+'-'+pad2(m)+'-'+pad2(dd);
     const ev=dayEvents(iso);
     let dots='';
-    CKIND.forEach(o=>{if(ev[o.k].length)dots+='<span class="cdot '+o.c+'"></span>'});
+    CKIND.forEach(o=>{if(o.adv&&!D.adv)return;if(ev[o.k].length)dots+='<span class="cdot '+o.c+'"></span>'});
     h+='<div class="cell'+(iso===today()?' today':'')+(iso===calSel?' sel':'')+'" data-cal="'+iso+'">'
       +'<span class="d">'+dd+'</span><span class="dots">'+dots+'</span></div>';
   }
@@ -2530,17 +2541,17 @@ function renderCalDay(){
     h+='<div class="crow'+(kind?' tap':'')+'"'+(kind?' data-edit="'+kind+':'+id+'"':'')+'>'
       +'<span class="ct '+cls+'">'+label+'</span>'
       +'<span class="cb">'+txt+(sub?'<small>'+sub+'</small>':'')+'</span></div>';};
-  ev.work.forEach(r=>add('t-work','作業',esc(r.task)+' ・ '+esc(r.crop),hhmm(manMin(r)),'work',r.id));
-  ev.spray.forEach(r=>add('t-spray','防除',esc(r.chem)+' ・ '+esc(r.crop),
+  if(D.adv)ev.work.forEach(r=>add('t-work','作業',esc(r.task)+' ・ '+esc(r.crop),hhmm(manMin(r)),'work',r.id));
+  if(D.adv)ev.spray.forEach(r=>add('t-spray','防除',esc(r.chem)+' ・ '+esc(r.crop),
     (r.dil?r.dil+'倍':'')+(r.dose?' ・ '+esc(r.dose):'')+(r.target?' ・ '+esc(r.target):''),'spray',r.id));
-  ev.harv.forEach(r=>add('t-harv','収穫',esc(r.crop)+' 収穫 '+r.got,
+  if(D.adv)ev.harv.forEach(r=>add('t-harv','収穫',esc(r.crop)+' 収穫 '+r.got,
     '出荷 '+r.ok+' ・ 規格外 '+r.ng+(r.got?'（'+Math.round(r.ng/r.got*100)+'%）':''),'harv',r.id));
   ev.ship.forEach(r=>add('t-ship','出荷',esc(r.crop)+' '+r.qty+'点',esc(r.store)+' ・ 単価 '+r.price+'円','ship',r.id));
   ev.sold.forEach(r=>add(r.store===DIRECT?'t-dir':'t-sold',
     r.store===DIRECT?'直販':(r.type==='sold'?'販売':'回収'),
     esc(r.crop)+' '+r.qty+'点'+(r.type==='sold'?' ・ '+yen(r.qty*r.price)+'円':''),
     r.store===DIRECT?esc(r.note||''):esc(r.store),'moves',r.id));
-  ev.fert.forEach(r=>add('t-fert','液肥',esc(r.name)+' ・ '+esc(r.crop),(r.dil?r.dil+'倍':'')));
+  if(D.adv)ev.fert.forEach(r=>add('t-fert','液肥',esc(r.name)+' ・ '+esc(r.crop),(r.dil?r.dil+'倍':'')));
   ev.exp.forEach(r=>add('t-exp','経費',esc(r.cat)+' '+yen(r.amt)+'円',esc(r.note||''),'exp',r.id));
   if(!n)h+='<p class="note" style="text-align:center">この日の記録はありません。</p>';
   else h+='<p class="note" style="text-align:center;margin-top:10px">記録をタップすると直せます。</p>';
@@ -4291,10 +4302,7 @@ new MutationObserver(()=>{
   const now=new Set(document.querySelectorAll('.sheet.on'));
   let opened=false;
   now.forEach(el=>{if(!openSheets.has(el))opened=true});   // 重なって開いても拾えるように
-  if(opened){
-    const el=$('toast');
-    if(el&&el.classList.contains('on')){el.classList.remove('on');clearTimeout(tT)}
-  }
+  if(opened)dropUndo();   // 取り消しの中身まで捨てる。あとから効いてしまわないように
   openSheets=now;
 }).observe(document.body,{subtree:true,attributes:true,attributeFilter:['class','style']});
 
@@ -5010,6 +5018,7 @@ $('impOk').onclick=()=>{
   toast(good.length+'件 '+yen(good.reduce((a,r)=>a+r.amt,0))+'円を取り込みました',true);
 };
 $('advTog').onclick=()=>{D.adv=!D.adv;save();applyFeat();renderSum();
+  renderList();if($('calBody'))renderCal();
   toast(D.adv?'作業・収穫・防除を使います':'お金まわりだけにしました')};
 $('plotTog').onclick=()=>{D.plotOn=!D.plotOn;save();applyFeat();renderSum();
   toast(D.plotOn?'作型と予定を使います':'作型と予定を隠しました')};
