@@ -561,7 +561,26 @@
   .rtoff .rtn,.rtoff .rts{color:var(--ink-3)}
   #rtDow{gap:5px;flex-wrap:nowrap}
   .chip.dow{flex:1 1 0;min-width:0;max-width:64px;padding:10px 0;text-align:center}
-  body.no-adv .x-adv,body.no-plot .x-plot,.x-hide{display:none !important}
+  body.no-adv .x-adv,body.no-plot .x-plot,body.no-gs .x-gs,.x-hide{display:none !important}
+  /* スプレッドシートから取り込む。手袋でも押せるよう、行全体を押す場所にする */
+  .gssec{display:flex;align-items:baseline;gap:8px;margin:18px 0 2px;padding-top:12px;border-top:2px solid var(--line)}
+  .gssec:first-child{margin-top:8px}
+  .gssec b{font-size:1.02rem}
+  .gssec span{font-size:.8rem;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .gsrow{display:flex;align-items:flex-start;gap:10px;padding:10px 2px;min-height:58px;
+    border-bottom:1px solid var(--line2);cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none}
+  .gsrow:last-child{border-bottom:0}
+  .gsck{flex:none;width:32px;height:32px;margin-top:2px;border-radius:8px;border:2px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.05rem;color:transparent}
+  .gsrow.on .gsck{background:var(--green);border-color:var(--green);color:var(--paper)}
+  .gsrow.off .impn,.gsrow.off .impa{color:var(--ink-3);text-decoration:line-through}
+  .gsrow .impn{white-space:normal;overflow-wrap:anywhere}
+  .gsrow.ng{cursor:default;opacity:.62}
+  .gsrow.ng .gsck{border-style:dashed}
+  .gsrow select{margin-top:5px;padding:5px 7px;min-height:40px;max-width:100%}
+  .gsmore{width:100%;margin:8px 0 0;border:1.5px dashed var(--line);border-radius:8px;background:transparent;
+    color:var(--ink-3);font:inherit;font-size:.86rem;padding:10px;min-height:46px}
+  .gsload{color:var(--ink-3);padding:18px 0;text-align:center}
   .zoombar{position:fixed;left:0;right:0;top:0;z-index:80;display:none;align-items:center;gap:10px;
     background:var(--amber);color:#1A1407;padding:9px 12px calc(9px) ;
     padding-top:calc(9px + env(safe-area-inset-top))}
@@ -666,7 +685,7 @@
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
-<body>
+<body class="no-gs">
 
 <header>
   <div class="hd-top">
@@ -819,6 +838,7 @@
     <div id="rcBody"></div>
     <button class="save alt" type="button" id="simpOpen" style="margin-top:11px">売上メールから取り込む</button>
     <p class="note">直売所から届く売上メールを、本文ごと貼って取り込めます。</p>
+    <button class="save alt x-gs" type="button" id="gsOpenRec" style="margin-top:9px">スプレッドシートから取り込む</button>
   </div>
 
   <div class="card" id="f-dir" style="display:none">
@@ -859,6 +879,7 @@
       <input type="text" id="xpNote" placeholder="例：○○種苗店 培土20L" list="noteList"><datalist id="noteList"></datalist></div>
     <button class="save stick" id="xpSave">経費を記録</button>
     <button class="save alt" type="button" id="impOpen" style="margin-top:9px">まとめて取り込む</button>
+    <button class="save alt x-gs" type="button" id="gsOpenExp" style="margin-top:9px">スプレッドシートから取り込む</button>
     <p class="note">よく買うものは、記録すると上にボタンとして並びます。次からはタップだけで入ります。<br>
     道の駅の販売手数料は自動で計算されるので、入力は不要です。<br>
     伝票をまとめて入れるときは「まとめて取り込む」から。</p>
@@ -967,6 +988,22 @@
     </div>
     <p class="note">オフにすると、お金まわり（出荷・販売・直販・経費）だけの画面になります。
       記録はどちらでも残るので、あとからオンに戻せば元どおり出てきます。</p>
+    <div class="fee-row" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+      <span>スプレッドシートから取り込む</span>
+      <button class="mini" id="gsTog" type="button">オフ</button>
+    </div>
+    <div class="x-gs" id="gsBox">
+      <div class="fld" id="fldGsUrl"><span class="lb">取り込みURL（Apps Script のウェブアプリ）</span>
+        <input type="text" id="gsUrl" inputmode="url" autocomplete="off" autocapitalize="off"
+          autocorrect="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec"></div>
+      <div style="display:flex;gap:8px;align-items:center;min-width:0">
+        <button class="save alt" type="button" id="gsSave" style="flex:1 1 auto;min-width:0;margin-top:0">URLを保存</button>
+        <button class="mini" type="button" id="gsClear" style="flex:none">消す</button>
+      </div>
+      <p class="note" id="gsInfo"></p>
+    </div>
+    <p class="note">経費帳のスプレッドシートから、売上と経費を読み込みます。
+      URLはこの端末にだけ保存し、バックアップ（JSON）には入れません。</p>
   </div>
 
   <h2>画面</h2>
@@ -1170,6 +1207,17 @@
 
   <button class="save" id="impOk" style="display:none">取り込む</button>
   <button class="save alt" id="impCancel" style="margin-top:9px;border-color:var(--line);color:var(--ink-3)">やめる</button>
+</div></div>
+
+<div class="sheet" id="sheetGs"><div class="sheet-in">
+  <div class="sheet-t">スプレッドシートから取り込む</div>
+  <div class="sheet-s">経費帳の「売上」と「明細」を読んで、まだkanonに入っていない分だけを足します。
+    いまの記録は消えません。</div>
+  <p class="errbar" id="errGs"></p>
+  <div id="gsPrev"></div>
+  <button class="save" id="gsOk" style="display:none;margin-top:12px">取り込む</button>
+  <button class="save alt" id="gsFetch" style="margin-top:9px">もう一度読む</button>
+  <button class="save alt" id="gsCancel" style="margin-top:9px;border-color:var(--line);color:var(--ink-3)">やめる</button>
 </div></div>
 
 <div class="sheet" id="sheetRt"><div class="sheet-in">
@@ -1697,6 +1745,11 @@ function applyFeat(){
     b.style.color=on?'var(--paper)':'';
     b.style.borderColor=on?'var(--green)':'';};
   set('advTog',D.adv);set('plotTog',D.plotOn);
+  // スプレッドシートの取り込みは、記録（D）ではなくこの端末の設定で決める
+  const gs=gsOn();
+  document.body.classList.toggle('no-gs',!gs);
+  set('gsTog',gs);
+  renderGsInfo();
   // 隠したタブを開いていたら、記録に移る
   const cur=document.querySelector('.panel.on');
   if(cur&&!D.plotOn&&(cur.id==='p-plan'||cur.id==='p-plot'))goto('p-rec');
@@ -3178,7 +3231,8 @@ function simpStore(name){
   const n=String(name).trim();
   if(D.stores.includes(n))return n;
   if(D.alias&&D.alias[n]&&D.stores.includes(D.alias[n]))return D.alias[n];
-  const norm=x=>String(x).replace(/[\s　]/g,'').replace(/店$/,'');
+  // 「万葉・おおひら館」と「万葉おおひら館」のように、中黒の有無だけの違いも同じ店とみなす
+  const norm=x=>String(x).replace(/[\s　・･]/g,'').replace(/店$/,'');
   return D.stores.find(st=>norm(st)===norm(n))||null;
 }
 
@@ -3445,6 +3499,294 @@ function renderImpPrev(){
   $('impOk').textContent=good.length+'件を取り込む';
 }
 
+/* ========== スプレッドシートから取り込む ==========
+   経費帳のスプレッドシートに置いた Apps Script（ウェブアプリ）から、
+   「売上」と「明細」を JSON でもらって、まだ入っていない分だけを足す。
+
+   ★ 取り込みURL と オン/オフ は、記録（D）に入れず、この端末の localStorage に別に置く。
+     D はまるごとJSONバックアップに入る。URLは「知っていれば売上と経費が読める鍵」なので、
+     D に入れると、友人にバックアップを渡したときにURLごと漏れる。
+     オン/オフも D に入れない。入れると、バックアップを戻した友人の kanon にこの機能が出てしまう。 */
+const GSKEY='kanon:gs';
+function gsConf(){
+  try{const v=JSON.parse(localStorage.getItem(GSKEY)||'null');return (v&&typeof v==='object')?v:{}}
+  catch(e){return {}}
+}
+function gsSet(patch){
+  const c={...gsConf(),...patch};
+  Object.keys(c).forEach(k=>{if(c[k]==null||c[k]==='')delete c[k]});
+  try{
+    if(Object.keys(c).length)localStorage.setItem(GSKEY,JSON.stringify(c));
+    else localStorage.removeItem(GSKEY);
+    return true;
+  }catch(e){return false}
+}
+const gsOn=()=>!!gsConf().on;
+// Apps Script のウェブアプリのURLか（https://script.google.com/macros/s/○○/exec）
+function gsUrlOk(u){
+  return /^https:\/\/script\.google\.com\/(?:a\/macros\/[^\/\s]+|macros)\/s\/[\w-]{20,}\/exec$/.test(String(u||'').trim());
+}
+function renderGsInfo(){
+  const el=$('gsInfo');if(!el)return;
+  const u=gsConf().url;
+  const inp=$('gsUrl');
+  if(inp&&document.activeElement!==inp)inp.value=u||'';
+  el.style.color='';
+  el.textContent=u?'URLは保存してあります（この端末だけ）。記録タブの「販売」と「経費」に「スプレッドシートから取り込む」が出ます。'
+    :'Apps Script を「ウェブアプリ」として公開したときに出るURL（…/exec で終わるもの）を貼ってください。';
+}
+
+let gsData=null;     // 読んできた中身 {sales:[], exp:[]}
+let gsPick={};       // 付け外しを変えた行  key → true/false
+let gsCatPick={};    // 経費の科目を選び直した行  key → 科目
+let gsShowDone=false;// 取り込み済みの行も見せるか
+let gsSeq=0;         // 読みに行った回の番号（閉じたあとに返事が来ても使わない）
+let gsSales=[], gsExp=[];
+
+const gsDate=v=>impDate(String(v??'').trim());
+function gsNum(v){
+  if(typeof v==='number')return Number.isFinite(v)?v:null;
+  return NUM(Z2H(String(v??'')).trim());
+}
+// 経費の行を見分ける印。取り込んだ記録に付けておき、次に読んだとき「取り込み済み」とわかるようにする
+const gsExpKey=(date,amt,note)=>'gs|'+date+'|'+amt+'|'+String(note||'').replace(/[\s　]/g,'');
+function gsCat(raw){
+  const k=String(raw||'').replace(/[\s　]/g,'');
+  if(CATS.includes(k))return {cat:k};
+  if(k==='土地改良区費')return {cat:'土地改良費'};
+  return {cat:'雑費',guess:true};       // 「不明」や決算書にない科目は、雑費にして印を出す
+}
+
+// 売上：1行を「1通の速報メール」とみなして、メールの取り込みと同じ計算に通す。
+// すでに記録してある点数（店・日・品目ごと）を差し引くので、何度読んでも二重にならない。
+// 本人と母（出品者が別）の行が同じ店・日・品目にあっても、点数は両方足される。
+function gsBuildSales(){
+  const list=(gsData&&gsData.sales)||[];
+  const out=[], feed=[];
+  list.forEach((s,i)=>{
+    const key='s'+i;
+    const date=gsDate(s.date), qty=gsNum(s.qty), amt=gsNum(s.amt);
+    let price=gsNum(s.price);
+    if(!(price>0)&&qty>0&&amt>0)price=Math.round(amt/qty);
+    const r={key,i,date:date||String(s.date??''),rawStore:String(s.store??'').trim(),
+      rawCrop:String(s.item??'').trim(),seller:String(s.seller??'').trim(),kind:String(s.kind??'').trim(),
+      qty:qty||0,mailQty:qty||0,price:price||0,why:[],skip:true};
+    if(!date)r.why.push('日付が読めない');
+    if(!(qty>0)||qty%1)r.why.push('点数が読めない');
+    if(!(price>0))r.why.push('単価が読めない');
+    if(!r.rawStore)r.why.push('店がない');
+    if(!r.rawCrop)r.why.push('品目がない');
+    if(r.why.length){r.bad=true;out.push(r);return}
+    // kanon には雑収入の欄がない。販売金額に混ぜると申告の欄を間違えるので入れない
+    if(r.kind==='雑収入'){r.misc=true;r.why.push('雑収入');out.push(r);return}
+    r.store=simpStore(r.rawStore);r.crop=simpCrop(r.rawCrop);
+    if(gsPick[key]===false){r.off=true;out.push(r);return}
+    out.push(r);
+    feed.push({pos:out.length-1,r,mail:{date,at:String(s.at??''),guessed:false,
+      items:[{name:r.rawCrop,price,qty,amt:qty*price,store:r.rawStore}]}});
+  });
+  const built=simpBuild({mails:feed.map(f=>f.mail)});
+  feed.forEach((f,k)=>{
+    const b=built[k];
+    out[f.pos]=Object.assign(b,{key:f.r.key,i:f.r.i,seller:f.r.seller,kind:f.r.kind});
+  });
+  out.forEach(r=>{
+    r.done=r.skip&&!r.bad&&!r.misc&&!r.off&&r.why.length===1&&r.why[0]==='取り込み済み';
+    r.on=!r.skip&&!r.off&&!r.bad&&!r.misc;
+    r.can=!r.bad&&!r.misc&&!r.done&&(r.off||!r.skip);   // 付け外しできる行
+  });
+  return out;
+}
+// 経費：同じ日・同じ金額の記録がすでにあれば外しておく。
+// 1件の記録は1行にしか当てない（同じ日に同じ金額の買い物が2つあっても、片方は新しい分として残る）
+function gsBuildExp(){
+  const list=(gsData&&gsData.exp)||[];
+  const rows=list.map((e,i)=>{
+    const key='e'+i;
+    const date=gsDate(e.date), amt=gsNum(e.amt);
+    const c=gsCat(e.cat);
+    const r={key,i,date,amt:amt||0,rawCat:String(e.cat??'').trim(),cat:c.cat,guess:!!c.guess,
+      note:String(e.note??'').trim(),src:String(e.src??'').trim(),bad:[]};
+    if(gsCatPick[key]){r.cat=gsCatPick[key];r.guess=false}
+    if(!date)r.bad.push('日付');
+    if(!(amt>0))r.bad.push('金額');
+    r.gk=r.bad.length?'':gsExpKey(date,amt,r.note);
+    return r;
+  });
+  const used=new Set();
+  rows.forEach(r=>{if(r.bad.length)return;                    // 前にここから取り込んだもの
+    const hit=(D.exp||[]).find(x=>!used.has(x)&&x.gk&&x.gk===r.gk);
+    if(hit){used.add(hit);r.st='done'}});
+  rows.forEach(r=>{if(r.bad.length||r.st)return;              // 手で入れた・貼り付けたもの
+    const hit=(D.exp||[]).find(x=>!used.has(x)&&x.date===r.date&&x.amt===r.amt);
+    if(hit){used.add(hit);r.st='dup';r.dupWith=hit.note||hit.cat||''}});
+  rows.forEach(r=>{
+    if(r.bad.length)r.st='bad'; else if(!r.st)r.st='new';
+    r.can=r.st==='new'||r.st==='dup';
+    r.on=r.can&&(r.key in gsPick?gsPick[r.key]:r.st==='new');
+    r.done=r.st==='done';
+  });
+  return rows;
+}
+const gsShort=n=>String(n||'').replace(/^佐藤[\s　]*/,'');   // 「佐藤 ふみ子」→「ふみ子」
+function gsRowHtml(r,body,amt){
+  const cls=r.can?(r.on?' on':' off'):' ng';
+  return '<div class="gsrow'+cls+'"'+(r.can?' data-gspick="'+r.key+'" role="checkbox" aria-checked="'+r.on+'" tabindex="0"':'')+'>'
+    +'<span class="gsck">'+(r.can?'✓':'')+'</span>'
+    +'<div class="impL">'+body+'</div>'
+    +'<b class="impa">'+amt+'</b></div>';
+}
+function renderGsPrev(){
+  const box=$('gsPrev');if(!box||!gsData)return;
+  gsSales=gsBuildSales();gsExp=gsBuildExp();
+  const sOn=gsSales.filter(r=>r.on), eOn=gsExp.filter(r=>r.on);
+  const sAmt=sOn.reduce((a,r)=>a+r.qty*r.price,0), eAmt=eOn.reduce((a,r)=>a+r.amt,0);
+  const doneN=gsSales.filter(r=>r.done).length+gsExp.filter(r=>r.done).length;
+  let h='<p class="tot num" style="margin:10px 0 2px">売上 '+sOn.length+'件 ・ '+yen(sAmt)+'円</p>'
+    +'<p class="tot num" style="margin:0 0 4px;border:0;padding-top:0">経費 '+eOn.length+'件 ・ '+yen(eAmt)+'円</p>';
+  if(gsData.at)h+='<p class="note" style="margin:0">'+esc(String(gsData.at).slice(5,16).replace('T',' ').replace('-','/'))+' に読んだ中身です</p>';
+
+  // ---- 売上 ----
+  const sv=gsSales.filter(r=>gsShowDone||!r.done)
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||'')||a.rawStore.localeCompare(b.rawStore)||a.i-b.i);
+  h+='<div class="gssec"><b>売上</b><span>シート「売上」 '+gsSales.length+'行</span></div>';
+  if(!sv.length)h+='<p class="note" style="margin:6px 0">'+(gsSales.length?'新しく入れる売上はありません。':'売上の行がありません。')+'</p>';
+  let cur='';
+  sv.forEach(r=>{
+    const head=r.date+'|'+r.rawStore;
+    if(head!==cur){
+      cur=head;
+      h+='<div class="simph"><b>'+esc(r.store||r.rawStore||'店なし')+'</b><span>'
+        +(DATE_RE.test(r.date)?md(r.date):esc(r.date))+'</span></div>';
+      if(!r.bad&&!r.misc&&!r.store&&r.rawStore){
+        h+='<div style="padding:0 0 8px"><select data-simps="'+esc(r.rawStore)+'">'
+          +'<option value="">「'+esc(r.rawStore)+'」はどの店？</option>'
+          +D.stores.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select></div>';
+      }
+    }
+    let tag='';
+    if(r.done)tag='<span class="imptag dup">取り込み済み</span>';
+    else if(r.misc)tag='<span class="imptag warn">雑収入なので入れません</span>';
+    else if(r.off)tag='<span class="imptag warn">外しました</span>';
+    else if(r.why.length)tag='<span class="imptag bad">'+esc(r.why.join('・'))+'</span>';
+    const needCrop=!r.bad&&!r.misc&&r.why&&r.why.includes('品目が未登録');
+    const body='<span class="impd">'+esc(gsShort(r.seller)||'出品者なし')+tag+'</span>'
+      +'<span class="impn">'+esc(r.crop||r.rawCrop||'品目なし')+' '+r.qty+'点 × '+yen(r.price)+'円</span>'
+      +(r.on&&r.mailQty!==r.qty?'<span class="impd">シート'+r.mailQty+'点 − 記録済み'+(r.mailQty-r.qty)+'点 → '+r.qty+'点を足す</span>':'')
+      +(needCrop?'<select data-simpc="'+esc(simpCropName(r.rawCrop))+'"><option value="">「'+esc(r.rawCrop)+'」はどの品目？</option>'
+          +D.crops.filter(c=>c!=='共通').map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')
+          +'<option value="__new">「'+esc(simpCropName(r.rawCrop))+'」を品目に追加</option></select>':'');
+    h+=gsRowHtml(r,body,yen(r.qty*r.price)+'円');
+  });
+
+  // ---- 経費 ----
+  const ev=gsExp.filter(r=>gsShowDone||!r.done)
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||'')||a.i-b.i);
+  h+='<div class="gssec"><b>経費</b><span>シート「明細」 '+gsExp.length+'行</span></div>';
+  if(!ev.length)h+='<p class="note" style="margin:6px 0">'+(gsExp.length?'新しく入れる経費はありません。':'経費の行がありません。')+'</p>';
+  ev.forEach(r=>{
+    let tag='';
+    if(r.st==='done')tag='<span class="imptag dup">取り込み済み</span>';
+    else if(r.st==='dup')tag='<span class="imptag dup">記録済みかも</span>';
+    else if(r.st==='bad')tag='<span class="imptag bad">'+r.bad.join('・')+'が読めない</span>';
+    if(r.guess&&r.can)tag+='<span class="imptag warn">科目「'+esc(r.rawCat||'空欄')+'」→雑費にしました</span>';
+    const body='<span class="impd">'+(r.date?md(r.date):'日付なし')+'　'+esc(r.cat)+tag+'</span>'
+      +'<span class="impn">'+esc(r.note||'（摘要なし）')+'</span>'
+      +(r.st==='dup'&&r.dupWith?'<span class="impd">kanonにある記録：'+esc(r.dupWith)+'</span>':'')
+      +(r.can?'<select data-gscat="'+r.key+'">'+CATS.map(c=>
+          '<option value="'+esc(c)+'"'+(c===r.cat?' selected':'')+'>'+esc(c)+'</option>').join('')+'</select>':'');
+    h+=gsRowHtml(r,body,r.amt?yen(r.amt)+'円':'—');
+  });
+
+  if(doneN)h+='<button type="button" class="gsmore" data-gsdone="1">'
+    +(gsShowDone?'取り込み済みの'+doneN+'件を隠す':'取り込み済みの'+doneN+'件は隠しています（見る）')+'</button>';
+
+  // ---- 説明 ----
+  const notes=[];
+  notes.push('タップで入れる・外すを切り替えられます。');
+  notes.push('売上は、店・日・品目ごとに、kanonに記録してある点数を差し引いて、足りない分だけを足します。何度読んでも二重にはなりません。');
+  if(gsSales.some(r=>r.why&&r.why.some(w=>/^棚に/.test(w))))
+    notes.push('<b style="color:var(--amber)">「棚に在庫がない」の売上は入れられません。</b>先にその店への出荷を記録してから、もう一度読んでください。');
+  if(gsSales.some(r=>r.misc))
+    notes.push('雑収入（工芸品など）は、kanonに欄がないので入れません。申告ではスプレッドシートの集計を使ってください。');
+  if(gsExp.some(r=>r.st==='dup'))
+    notes.push('<b style="color:var(--amber)">「記録済みかも」</b>は、同じ日に同じ金額の経費がkanonにすでにある行です。最初は外してあります。別の買い物ならタップして入れてください。');
+  if(gsExp.some(r=>r.guess&&r.can))
+    notes.push('科目が決算書にないものは雑費にしてあります。下の選び直しで直してください。');
+  h+='<p class="note">'+notes.join('<br>')+'</p>';
+  box.innerHTML=h;
+  const n=sOn.length+eOn.length;
+  $('gsOk').style.display=n?'block':'none';
+  $('gsOk').textContent=n+'件を取り込む';
+}
+// Apps Script に読みにいく。失敗の理由ごとに、次にすることがわかる言葉で返す
+async function gsGet(url){
+  const ac=(typeof AbortController==='function')?new AbortController():null;
+  const tm=setTimeout(()=>{if(ac)ac.abort()},30000);
+  let res, txt;
+  try{
+    // 余計なヘッダーを付けない（付けると Google 側が受け付けない事前確認が走る）。
+    // cookie も送らない。「全員」に公開したウェブアプリならログインなしで読める
+    res=await fetch(url,{method:'GET',cache:'no-store',redirect:'follow',credentials:'omit',signal:ac?ac.signal:undefined});
+    txt=await res.text();
+  }catch(e){throw {kind:(e&&e.name==='AbortError')?'slow':'net'}}
+  finally{clearTimeout(tm)}
+  if(!res.ok)throw {kind:'http',code:res.status};
+  let j=null;
+  try{j=JSON.parse(txt)}catch(e){throw {kind:'notours'}}
+  if(!j||j.app!=='kanon-sheet')throw {kind:'notours'};
+  if(j.error)throw {kind:'script',msg:String(j.error)};
+  if(!Array.isArray(j.sales)||!Array.isArray(j.exp))throw {kind:'notours'};
+  return j;
+}
+function gsErrText(e){
+  switch(e&&e.kind){
+    case 'slow':return '時間がかかりすぎたので、やめました。「もう一度読む」を押してください。';
+    case 'http':return 'スクリプトから正しい返事がありません（番号 '+e.code+'）。設定のURLが正しいか確かめてください。';
+    case 'notours':return 'URLの先が、kanon用のスクリプトではないようです。…/exec で終わるURLか確かめてください。';
+    case 'script':return 'スプレッドシート側で止まりました：'+e.msg;
+    default:return 'つながりませんでした。電波のある所で「もう一度読む」を押してください。'
+      +'電波があるのに続くときは、Apps Script の公開で「アクセスできるユーザー」が「全員」になっているか確かめてください。';
+  }
+}
+async function gsLoad(){
+  const box=$('gsPrev'), eb=$('errGs');
+  eb.classList.remove('on');eb.textContent='';
+  $('gsOk').style.display='none';
+  gsData=null;gsSales=[];gsExp=[];
+  const url=gsConf().url;
+  if(!gsUrlOk(url)){
+    box.innerHTML='<p class="note" style="margin:10px 0">取り込みURLがまだ入っていません。'
+      +'設定の「使う機能」で、Apps Script のURLを貼ってください。</p>'
+      +'<button class="save alt" type="button" id="gsGoSet">設定を開く</button>';
+    return;
+  }
+  if(navigator.onLine===false){
+    box.innerHTML='';eb.textContent='圏外のようです。電波のある所で「もう一度読む」を押してください。';eb.classList.add('on');
+    return;
+  }
+  const seq=++gsSeq;
+  box.innerHTML='<p class="note gsload">スプレッドシートを読んでいます…</p>';
+  $('gsFetch').disabled=true;
+  try{
+    const j=await gsGet(url);
+    if(seq!==gsSeq)return;
+    gsData=j;gsPick={};gsCatPick={};gsShowDone=false;
+    renderGsPrev();buzz(20);
+  }catch(e){
+    if(seq!==gsSeq)return;
+    box.innerHTML='';eb.textContent=gsErrText(e);eb.classList.add('on');buzz([40,60,40]);
+  }finally{
+    if(seq===gsSeq)$('gsFetch').disabled=false;
+  }
+}
+function gsOpen(){
+  if(!gsOn())return;
+  $('sheetGs').classList.add('on');
+  gsLoad();
+}
+function gsClose(){gsSeq++;$('gsFetch').disabled=false;$('sheetGs').classList.remove('on')}
+
 /* ========== 毎日の作業：一覧と編集 ========== */
 function renderAudit(){
   const box=$('auditBox');if(!box)return;
@@ -3708,7 +4050,8 @@ document.addEventListener('change',e=>{
   const ss=e.target.closest('[data-simps]');
   if(ss&&ss.value){
     D.alias??={};D.alias[ss.dataset.simps]=ss.value;save();
-    simpRedo();toast('この店として覚えました');return;
+    if($('sheetGs').classList.contains('on'))renderGsPrev(); else simpRedo();
+    toast('この店として覚えました');return;
   }
   const sc=e.target.closest('[data-simpc]');
   if(sc&&sc.value){
@@ -3729,8 +4072,11 @@ document.addEventListener('change',e=>{
       }
       save();toast('「'+raw+'」は'+sc.value+'として覚えました');
     }
-    simpRedo();return;
+    if($('sheetGs').classList.contains('on'))renderGsPrev(); else simpRedo();
+    return;
   }
+  const gc=e.target.closest('[data-gscat]');
+  if(gc){gsCatPick[gc.dataset.gscat]=gc.value;renderGsPrev();return}
   const ic=e.target.closest('[data-impcat]');
   if(ic){const r=impRows[+ic.dataset.impcat];
     if(r){r.cat=ic.value;if(r.guess){r.guess=false;renderImpPrev()}}}   // 直したら印を消す
@@ -5029,6 +5375,82 @@ $('impOk').onclick=()=>{
   renderCats();renderQuick();refreshAll();buzz(25);
   toast(good.length+'件 '+yen(good.reduce((a,r)=>a+r.amt,0))+'円を取り込みました',true);
 };
+/* ---- スプレッドシートから取り込む ---- */
+$('gsOpenRec').onclick=gsOpen;
+$('gsOpenExp').onclick=gsOpen;
+$('gsFetch').onclick=gsLoad;
+$('gsCancel').onclick=gsClose;
+$('sheetGs').onclick=e=>{if(e.target.id==='sheetGs')gsClose()};
+function gsToggle(row){
+  const k=row.dataset.gspick;
+  const r=[...gsSales,...gsExp].find(x=>x.key===k);
+  if(!r||!r.can)return;
+  gsPick[k]=!r.on;
+  renderGsPrev();buzz(12);
+}
+$('gsPrev').addEventListener('click',e=>{
+  if(e.target.closest('select,option'))return;          // 科目や品目を選んでいるときは切り替えない
+  if(e.target.closest('#gsGoSet')){gsClose();goto('p-set');
+    setTimeout(()=>{const b=$('gsBox');if(b)b.scrollIntoView({block:'center',behavior:'smooth'})},200);return}
+  if(e.target.closest('[data-gsdone]')){gsShowDone=!gsShowDone;renderGsPrev();return}
+  const row=e.target.closest('[data-gspick]');
+  if(row)gsToggle(row);
+});
+$('gsPrev').addEventListener('keydown',e=>{
+  const row=e.target.closest&&e.target.closest('[data-gspick]');
+  if(row&&(e.key==='Enter'||e.key===' ')&&e.target===row){e.preventDefault();gsToggle(row)}
+});
+$('gsOk').onclick=()=>{
+  if(!gsData)return;
+  const ss=gsSales.filter(r=>r.on&&r.store&&r.crop&&r.qty>0);
+  const ee=gsExp.filter(r=>r.on&&r.date&&r.amt>0);
+  if(!ss.length&&!ee.length)return;
+  const added=[];
+  ss.forEach(r=>{
+    // メールの取り込みと同じ形。単価はシートの単価（総額）。手数料は kanon が店の率で計算する
+    const rec={id:uid(),date:r.date,type:'sold',crop:r.crop,store:r.store,qty:r.qty,price:r.price};
+    D.moves.push(rec);added.push({arr:'moves',id:rec.id});
+  });
+  ee.forEach(r=>{
+    const rec={id:uid(),date:r.date,cat:r.cat,note:r.note,amt:r.amt,gk:r.gk};
+    D.exp.push(rec);added.push({arr:'exp',id:rec.id});
+  });
+  markAdd(added);
+  save();
+  gsData=null;gsClose();
+  renderCats();renderQuick();refreshAll();buzz(25);
+  const sAmt=ss.reduce((a,r)=>a+r.qty*r.price,0), eAmt=ee.reduce((a,r)=>a+r.amt,0);
+  const msg=[];
+  if(ss.length)msg.push('売上 '+yen(sAmt)+'円');
+  if(ee.length)msg.push('経費 '+ee.length+'件 '+yen(eAmt)+'円');
+  toast(msg.join('・')+' を取り込みました',true);
+};
+$('gsTog').onclick=()=>{
+  const on=!gsOn();
+  if(!gsSet({on})){toast('この端末に保存できませんでした');return}
+  applyFeat();
+  toast(on?'スプレッドシートから取り込めるようにしました':'スプレッドシートからの取り込みを隠しました');
+  if(on&&!gsConf().url)setTimeout(()=>{const b=$('gsBox');if(b)b.scrollIntoView({block:'center',behavior:'smooth'})},100);
+};
+$('gsSave').onclick=()=>{
+  const f=$('fldGsUrl');f.classList.remove('bad');
+  const v=$('gsUrl').value.trim();
+  if(!gsUrlOk(v)){
+    f.classList.add('bad');
+    $('gsInfo').textContent='https://script.google.com/macros/s/…/exec の形のURLを貼ってください。'
+      +'Apps Script の「デプロイ」→「ウェブアプリ」で出るURLです。';
+    $('gsInfo').style.color='var(--red)';
+    toast('URLの形が違います');buzz([40,60,40]);return;
+  }
+  if(!gsSet({url:v})){toast('この端末に保存できませんでした');return}
+  try{$('gsUrl').blur()}catch(e){}
+  renderGsInfo();toast('URLを保存しました（この端末だけ）');buzz(20);
+};
+$('gsClear').onclick=async()=>{
+  if(!gsConf().url){$('gsUrl').value='';renderGsInfo();return}
+  if(!await ask('URLを消しますか','この端末から取り込みURLを消します。スプレッドシートの中身は消えません。','消す',true))return;
+  gsSet({url:null});$('gsUrl').value='';renderGsInfo();toast('URLを消しました');
+};
 $('advTog').onclick=()=>{D.adv=!D.adv;save();applyFeat();renderSum();
   renderList();if($('calBody'))renderCal();
   toast(D.adv?'作業・収穫・防除を使います':'お金まわりだけにしました')};
@@ -5328,6 +5750,8 @@ $('expWork').onclick=()=>csv(D.work.map(r=>[r.date,r.task,r.crop,r.min,Math.max(
 $('bkSave').onclick=async()=>{
   const d=new Date();
   const stamp=d.getFullYear()+pad2(d.getMonth()+1)+pad2(d.getDate())+'-'+pad2(d.getHours())+pad2(d.getMinutes());
+  // 書き出すのは D だけ。スプレッドシートの取り込みURL（GSKEY）は D の外に置いてあるので入らない。
+  // 友人にバックアップを渡してもURLが漏れないように、URLを D に入れないこと
   const payload={app:'kanon',ver:1,savedAt:new Date().toISOString(),data:D};
   const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
@@ -5442,8 +5866,9 @@ async function showVer(){
 }
 $('verChk').onclick=()=>{swCheck(true);showVer()};
 $('wipe').onclick=async()=>{
-  if(!await ask('すべて消去しますか','記録・作型・繰り返しが全部消えます。元に戻せません。','すべて消す',true))return;
+  if(!await ask('すべて消去しますか','記録・作型・繰り返しと、取り込みURLが全部消えます。元に戻せません。','すべて消す',true))return;
   D=JSON.parse(JSON.stringify(DEF));
+  try{localStorage.removeItem(GSKEY)}catch(e){}    // この端末だけに置いた取り込みURLも消す
   lastAdd=[];rcStore=null;
   save();renderEverything();toast('消去しました');
 };
